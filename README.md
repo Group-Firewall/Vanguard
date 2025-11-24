@@ -2,7 +2,7 @@
 
 A production-grade Network Intrusion Detection System that combines signature-based detection with machine learning models for detecting both known and zero-day network intrusions.
 
-## 🏗️ System Architecture
+## 🏗️ System Architecture  
 
 ```
 ┌─────────────────┐
