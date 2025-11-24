@@ -36,5 +36,23 @@ export const modelAPI = {
     api.post('/model/retrain', { model_type: modelType, force }),
 }
 
+export const testDataAPI = {
+  create: () => api.post('/test-data/create'),
+}
+
+// Add error interceptor for better debugging
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    console.error('API Error:', {
+      url: error.config?.url,
+      method: error.config?.method,
+      status: error.response?.status,
+      message: error.response?.data?.detail || error.message
+    })
+    return Promise.reject(error)
+  }
+)
+
 export default api
 
