@@ -6,7 +6,7 @@ http://localhost:8000/api
 ```
 
 ## Authentication
-
+Currently, the API does not require authentication. In production, implement JWT or OAuth2.
 
 ## Endpoints
 
