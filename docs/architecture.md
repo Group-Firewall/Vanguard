@@ -102,7 +102,7 @@ Vanguard is a production-grade Network Intrusion Detection System (NIDS) that co
 #### Tier 1: Signature-Based Detection
 - Pattern matching for known attack signatures
 - Fast, low-latency detection
-- Examples: Port scans, SYN floods, suspicious ports
+- Examples may include: Port scans, SYN floods, suspicious ports
 
 #### Tier 2: ML-Based Detection
 
