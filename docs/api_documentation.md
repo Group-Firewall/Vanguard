@@ -295,7 +295,7 @@ ws.onmessage = (event) => {
 ## Error Responses
 
 All errors follow this format:
-this is incase of an error
+
 ```json
 {
   "detail": "Error message here"
