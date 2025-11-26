@@ -27,6 +27,7 @@ Network traffic data has many features:
 - Generalizes well to unseen attack patterns
 - Less prone to memorizing training data compared to deep learning
 
+ Less prone to memorizing training data compared to deep learning
 ### 3. **Effective for Binary and Multi-Class Classification**
 
 Network intrusion detection involves:
