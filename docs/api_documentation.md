@@ -310,8 +310,6 @@ All errors follow this format:
 
 ## Rate Limiting
 
-- Alert creation: 100 alerts per minute per IP address
-- API requests: No rate limiting currently (add in production)
 
 ## Examples
 
