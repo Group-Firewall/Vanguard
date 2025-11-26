@@ -206,5 +206,5 @@ const predict = async (packetData) => {
 ### Database Connection
 - Check `.env` file for `DATABASE_URL`
 - Verify MySQL is running
-- Test connection: `python -c "from app.database import engine; print('Connected!')"`
+- Testong connection: `python -c "from app.database import engine; print('Connected!')"`
 
