@@ -6,7 +6,7 @@ import random
 
 def create_test_data():
     """Create test data for dashboard"""
-    # Initialize the database 
+    # Initialize  database 
     init_db()
     
     db = SessionLocal()
