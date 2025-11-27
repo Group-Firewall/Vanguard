@@ -22,7 +22,7 @@ def create_test_data():
             )
             db.add(metric)
         
-        
+        # Create test alerts
         print("Creating test alerts...")
         severities = ['low', 'medium', 'high']
         alert_types = ['known_attack', 'zero_day', 'suspicious']
