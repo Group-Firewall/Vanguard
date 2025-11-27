@@ -3,7 +3,7 @@ import pickle
 from pathlib import Path
 from ml.models.hybrid import HybridDetectionEngine
 from app.config import settings
-
+# script fot the hybrid features
 def save_hybrid_model():
     """Save the hybrid detection engine"""
     print("Initializing hybrid detection engine...")
