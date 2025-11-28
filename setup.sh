@@ -17,7 +17,7 @@ echo "Installing Python dependencies..."
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# Initialize database
+# Initialization of the database
 echo "Initializing database..."
 cd backend
 python -m app.database
