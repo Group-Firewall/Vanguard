@@ -8,7 +8,8 @@ import AttackIntelligence from './pages/AttackIntelligence'
 import DetectionEngines from './pages/DetectionEngines'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
-import './styles/index.css'
+import './styles/index.css' 
+
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -21,6 +22,8 @@ function App() {
     return () => window.removeEventListener('sidebar-toggle', handleSidebarToggle)
   }, [])
 
+
+  // Routes
   return (
     <Router>
       <div className="flex min-h-screen bg-gray-100">
