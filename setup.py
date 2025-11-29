@@ -26,5 +26,5 @@ setup(
         "seaborn>=0.13.0",
         "plotly>=5.18.0",
     ],
-) #script for Vangaurd
+) #Setup script for Vangaurd
 
