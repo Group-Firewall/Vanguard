@@ -21,7 +21,7 @@ function Metrics({ metrics }) {
       </div>
     )
   }
-/* Model Confidence volume*/
+
   const chartData = [
     {
       name: 'Current',
