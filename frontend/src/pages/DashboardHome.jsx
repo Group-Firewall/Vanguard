@@ -43,7 +43,7 @@ function DashboardHome() {
       setMetrics(metricsRes.data)
       setAlerts(alertsRes.data || [])
 
-      // Calculate system health
+      
       if (metricsRes.data) {
         const dosCount = (alertsRes.data || []).filter(a => 
           a.alert_type?.toLowerCase().includes('dos') || 
