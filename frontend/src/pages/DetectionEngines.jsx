@@ -68,7 +68,7 @@ function DetectionEngines() {
   const loadPerformanceData = async () => {
     try {
       const response = await metricsAPI.get(1)
-      // Generate performance data
+      
       const models = ['Random Forest', 'XGBoost', 'LightGBM', 'SVM', 'Isolation Forest', 'One-Class SVM']
       const data = models.map(model => ({
         model,
