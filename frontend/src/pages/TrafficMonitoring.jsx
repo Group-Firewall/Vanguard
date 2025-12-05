@@ -40,7 +40,7 @@ function TrafficMonitoring() {
 
       setMetrics(metricsRes.data)
 
-     
+      // Generate time series data
       const now = new Date()
       const data = []
       const basePackets = metricsRes.data?.packet_volume || 100
