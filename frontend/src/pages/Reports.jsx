@@ -36,7 +36,7 @@ function Reports() {
       const alerts = alertsRes.data || []
       const metrics = metricsRes.data
 
-     
+      // Generate report summary
       const summary = {
         totalAlerts: alerts.length,
         highSeverity: alerts.filter(a => a.severity === 'high' || a.severity === 'critical').length,
