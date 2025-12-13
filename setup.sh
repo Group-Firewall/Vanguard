@@ -52,4 +52,4 @@ echo "  cd backend && uvicorn app.main:app --reload"
 echo ""
 echo "To start the frontend:"
 echo "  cd frontend && npm run dev"
-
+# Run instructions after setup
