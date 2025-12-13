@@ -44,7 +44,7 @@ cd frontend
 npm install
 
 cd ..
-
+# Note: Run these commands in separate terminal windows for full functionality
 echo "Setup complete!"
 echo ""
 echo "To start the backend:"
