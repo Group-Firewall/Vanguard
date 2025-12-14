@@ -40,7 +40,7 @@ export const testDataAPI = {
   create: () => api.post('/test-data/create'),
 }
 
-
+// Add error interceptor for better debugging
 api.interceptors.response.use(
   (response) => response,
   (error) => {
