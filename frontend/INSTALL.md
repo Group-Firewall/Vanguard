@@ -11,7 +11,7 @@ npm install
 ```
 
 Or from the project root:
-
+ 
 ```powershell
 cd frontend
 npm install
