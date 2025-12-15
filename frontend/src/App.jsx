@@ -1,7 +1,7 @@
 import React from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import Dashboard from './components/Dashboard'
-import './styles/index.css'
+import './styles/index.css' 
 
 function App() {
   return (
