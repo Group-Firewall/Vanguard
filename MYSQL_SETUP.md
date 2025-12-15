@@ -6,7 +6,7 @@
 1. Download MySQL Installer from: https://dev.mysql.com/downloads/installer/
 2. Run the installer and select "Developer Default"
 3. Complete the installation wizard
-4. Set a root password (remember this!)
+4. Set a root password (remember this!) 
 
 ### Linux (Ubuntu/Debian)
 ```bash
@@ -93,7 +93,7 @@ cd backend
 python -m app.database
 ```
 
-This will create all necessary tables in your MySQL database.
+This will create all necessary tables in your MySQL database .
 
 ## Step 6: Verify Connection
 

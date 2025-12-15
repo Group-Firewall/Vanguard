@@ -1,4 +1,4 @@
-"""Merge multiple datasets into a unified format"""
+"""Merging multiple datasets into a unified format"""
 import pandas as pd
 import numpy as np
 from pathlib import Path

@@ -29,6 +29,10 @@ app.include_router(websocket.router, prefix="/ws", tags=["websocket"])
 from app.api import ml_routes
 app.include_router(ml_routes.router, prefix="/api", tags=["ml"])
 
+# Include stats routes
+from app.api import stats_routes
+app.include_router(stats_routes.router, prefix="/api", tags=["stats"])
+
 
 @app.on_event("startup")
 async def startup_event():
