@@ -7,7 +7,7 @@ import os
 class Settings(BaseSettings):
     """Application settings"""
     
-    # Application
+    
     APP_NAME: str = "Vanguard NIDS"
     VERSION: str = "1.0.0"
     DEBUG: bool = False
