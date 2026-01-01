@@ -200,7 +200,7 @@ const predict = async (packetData) => {
 - Check: `backend/models/hybrid/hybrid.pkl` exists
 
 ### CORS Errors
-- Already enabled in `main.py` lines 16-22
+- Already enabled in `main.py` between lines 16-22
 - Verify frontend URL matches allowed origins
 
 ### Database Connection
