@@ -133,7 +133,7 @@ function AlertsIncidents() {
     }
   }
 
-  
+  // Statistics for charts
   const severityData = filteredAlerts.reduce((acc, alert) => {
     const sev = alert.severity || 'unknown'
     acc[sev] = (acc[sev] || 0) + 1
