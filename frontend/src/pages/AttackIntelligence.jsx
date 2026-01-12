@@ -63,7 +63,7 @@ function AttackIntelligence() {
       }
       setThreatTrends(trends)
 
-      // Attack frequency heatmap data (hour vs day)
+      
       const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
       const hours = Array.from({ length: 24 }, (_, i) => i)
       const frequencyData = days.map(day => ({
