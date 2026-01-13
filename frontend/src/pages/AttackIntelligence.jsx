@@ -75,7 +75,7 @@ function AttackIntelligence() {
       }))
       setAttackFrequency(frequencyData)
 
-      
+      // Top attack types
       const attackTypeCount = {}
       allAlerts.forEach(alert => {
         const type = alert.alert_type || 'unknown'
