@@ -27,7 +27,7 @@ class DatasetMerger:
         for df in datasets[1:]:
             common_features = common_features.intersection(set(df.columns))
         
-        # Remove label column from common features (we'll handle it separately)
+       
         common_features.discard('label')
         return sorted(list(common_features))
     
