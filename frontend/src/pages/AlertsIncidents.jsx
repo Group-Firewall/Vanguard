@@ -72,7 +72,7 @@ function AlertsIncidents() {
       })
     }
 
-    // Period filter
+    // Period Alert Filter fixation
     if (filters.period !== 'all') {
       const now = new Date()
       const periodMs = {
