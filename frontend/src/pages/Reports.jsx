@@ -54,7 +54,7 @@ function Reports() {
         }
       })
 
-      // Time distribution
+      
       const now = new Date()
       for (let i = 23; i >= 0; i--) {
         const hourStart = new Date(now.getTime() - i * 3600000)
