@@ -76,7 +76,7 @@ function Reports() {
 
   const handleExportReport = (format) => {
     alert(`Exporting report as ${format}...`)
-    // In a real implementation, this would generate and download the report
+   
   }
 
   const attackTypeData = summaryData ? Object.entries(summaryData.attackTypes)
