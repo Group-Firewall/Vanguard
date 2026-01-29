@@ -1,11 +1,18 @@
-"""Packet capture service using Scapy"""
+"""Packet capture service.
+
+Currently uses Scapy for live capture and stores raw packets in the database.
+Packets are then processed by the background processor (feature extraction,
+ML detection, alerting, metrics, reporting).
+"""
+
 import threading
-import time
 from datetime import datetime
 from typing import Optional
+
 from scapy.all import sniff, get_if_list
 from scapy.layers.inet import IP, TCP, UDP
 from sqlalchemy.orm import Session
+
 from app.models import Packet
 from app.config import settings
 import json
@@ -59,21 +66,22 @@ class PacketCaptureService:
                 
                 packet_size = len(packet)
                 
-                # Extract basic features
-                features = {
+                # Extract basic features (stored in raw_data; the dedicated
+                # ML-ready feature vector is computed later by the
+                # BackgroundProcessor so we leave Packet.features as None here)
+                basic_features = {
                     "ip_version": ip_layer.version,
                     "ip_ttl": ip_layer.ttl,
                     "ip_len": ip_layer.len,
                     "ip_flags": str(ip_layer.flags),
                     "packet_size": packet_size,
+                    "src_port": src_port,
+                    "dst_port": dst_port,
                 }
-                
-                if src_port:
-                    features["src_port"] = src_port
-                if dst_port:
-                    features["dst_port"] = dst_port
-                
-                # Store packet in database
+                                
+                # Store packet in database. We intentionally set features=None so
+                # that the BackgroundProcessor can pick this packet up and run
+                # end-to-end ML detection and alerting.
                 if self.db_session:
                     db_packet = Packet(
                         timestamp=datetime.now(),
@@ -83,11 +91,13 @@ class PacketCaptureService:
                         dst_port=dst_port,
                         protocol=protocol,
                         packet_size=packet_size,
-                        features=features,
                         raw_data=json.dumps({
                             "summary": packet.summary(),
-                            "show": packet.show(dump=True)
+                            "show": packet.show(dump=True),
+                            "basic_features": basic_features,
                         })
+                        # features field is left as None on insert; it will be
+                        # populated by the background processing pipeline.
                     )
                     self.db_session.add(db_packet)
                     
