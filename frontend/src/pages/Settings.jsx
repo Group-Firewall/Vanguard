@@ -34,7 +34,7 @@ function Settings() {
 
   const handleSave = () => {
     alert('Settings saved successfully!')
-    
+    // In a real implementation, this would send settings to the backend
   }
 
   return (
