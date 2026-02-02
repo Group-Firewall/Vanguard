@@ -32,12 +32,12 @@ class MLService:
                 self.model_loaded = True
                 logger.info("Hybrid model loaded successfully")
             else:
-                # Initialize new hybrid engine
-                logger.info("Hybrid model file not found, initializing new engine")
+                # Initialize new hybrid engine (no hybrid.pkl yet — normal before first training)
+                logger.info("No saved hybrid model found; initializing detection engine.")
                 self.hybrid_engine = HybridDetectionEngine()
                 self.hybrid_engine.load_models()
                 self.model_loaded = True
-                logger.info("Hybrid detection engine initialized")
+                logger.info("Hybrid detection engine initialized (signature-based + ML when models are trained).")
         except Exception as e:
             logger.error(f"Error loading hybrid model: {e}")
             # Fallback: create new engine
