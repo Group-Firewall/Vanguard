@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react'
 import { captureAPI, metricsAPI, alertsAPI } from '../services/api'
 import ConnectionStatus from '../components/ConnectionStatus'
-import TestDataButton from '../components/TestDataButton'
+import CaptureEmptyState from '../components/CaptureEmptyState'
 import EnhancedMetrics from '../components/EnhancedMetrics'
 import RealTimeFeed from '../components/RealTimeFeed'
 import AlertCenter from '../components/AlertCenter'
@@ -190,11 +190,9 @@ function DashboardHome() {
           </div>
         )}
 
-        {/* Test Data Button */}
-        {(!metrics || (metrics.packet_volume === 0 && metrics.attack_rate === 0)) && (
-          <div className="mb-6">
-            <TestDataButton />
-          </div>
+        {/* Empty state: encourage real data from capture; test data is optional (dev only) */}
+        {(!metrics || (metrics.packet_volume === 0 && !captureStatus.is_capturing)) && (
+          <CaptureEmptyState />
         )}
 
         {/* Top Row - Full Width Statistics */}

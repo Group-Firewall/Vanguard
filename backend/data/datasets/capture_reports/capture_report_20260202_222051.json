@@ -1,0 +1,15 @@
+{
+  "generated_at": "2026-02-02T22:20:51.239852",
+  "window_minutes": 10,
+  "packet_count": 0,
+  "alert_count": 0,
+  "stats": {
+    "min_packet_size": 0,
+    "max_packet_size": 0,
+    "avg_packet_size": 0
+  },
+  "severity_breakdown": {},
+  "top_sources": [],
+  "protocol_distribution": {},
+  "alerts_sample": []
+}
