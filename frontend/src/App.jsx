@@ -1,5 +1,11 @@
 import React, { useState, useEffect } from 'react'
+
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+
+
+import Dashboard from './components/Dashboard'
+import './styles/index.css' 
+
 import Sidebar from './components/Sidebar'
 import DashboardHome from './pages/DashboardHome'
 import AlertsIncidents from './pages/AlertsIncidents'
