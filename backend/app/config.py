@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     DEBUG: bool = False
     
+    # Authentication
+    SECRET_KEY: str = "your-secret-key-here-for-development" # Change in production
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    
     # Database
     # For MySQL: mysql+pymysql://username:password@localhost:3306/vanguard
     # For SQLite: sqlite:///./vanguard.db

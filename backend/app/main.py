@@ -1,4 +1,10 @@
 """Main FastAPI application"""
+import sys
+import os
+
+# Add project root to sys.path preventing ImportErrors
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
@@ -22,6 +28,8 @@ app.add_middleware(
 )
 
 # Include routers
+from app.api import auth
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(routes.router, prefix="/api", tags=["api"])
 app.include_router(websocket.router, prefix="/ws", tags=["websocket"])
 
