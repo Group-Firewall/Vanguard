@@ -175,3 +175,36 @@ class HealthResponse(BaseModel):
     statistics: Dict[str, Any]
     error: Optional[str] = None
 
+
+class UserBase(BaseModel):
+    """User base schema"""
+    username: str
+    email: str
+    full_name: Optional[str] = None
+
+
+class UserCreate(UserBase):
+    """User creation schema"""
+    password: str
+
+
+class User(UserBase):
+    """User response schema"""
+    id: int
+    is_active: bool
+    is_superuser: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class Token(BaseModel):
+    """Token response schema"""
+    access_token: str
+    token_type: str
+
+
+class TokenData(BaseModel):
+    """Token payload data schema"""
+    username: Optional[str] = None
