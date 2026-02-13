@@ -32,6 +32,9 @@ function App() {
     <AuthProvider>
       <Router>
         <Routes>
+          {/* Default Route */}
+          <Route path="/" element={<Navigate to="/login" replace />} />
+
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
@@ -45,7 +48,9 @@ function App() {
                   <Sidebar />
                   <div className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-20'}`}>
                     <Routes>
+                      {/* Default to dashboard for authenticated users */}
                       <Route path="/" element={<Navigate to="/dashboard" replace />} />
+
                       <Route path="/dashboard" element={<DashboardHome />} />
                       <Route path="/alerts" element={<AlertsIncidents />} />
                       <Route path="/traffic" element={<TrafficMonitoring />} />
@@ -53,6 +58,8 @@ function App() {
                       <Route path="/engines" element={<DetectionEngines />} />
                       <Route path="/reports" element={<Reports />} />
                       <Route path="/settings" element={<Settings />} />
+
+                      {/* Fallback for authenticated users */}
                       <Route path="*" element={<Navigate to="/dashboard" replace />} />
                     </Routes>
                   </div>
@@ -60,6 +67,8 @@ function App() {
               }
             />
           </Route>
+
+          {/* Universal Redirect: Unauthenticated users hitting anything else will be caught by ProtectedRoute and sent to /login */}
         </Routes>
       </Router>
     </AuthProvider>

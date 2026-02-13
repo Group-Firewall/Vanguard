@@ -7,8 +7,15 @@ const Login = () => {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
-    const { login } = useAuth();
+    const { login, user, loading: authLoading } = useAuth();
     const navigate = useNavigate();
+
+    // Removed automatic redirect to dashboard to ensure login credentials are requested afresh
+    // React.useEffect(() => {
+    //     if (user && !authLoading) {
+    //         navigate('/dashboard');
+    //     }
+    // }, [user, authLoading, navigate]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
