@@ -48,7 +48,7 @@ function Reports() {
       alerts.forEach(alert => {
         const type = alert.alert_type || 'unknown'
         summary.attackTypes[type] = (summary.attackTypes[type] || 0) + 1
-        
+
         if (alert.source_ip) {
           summary.topSources[alert.source_ip] = (summary.topSources[alert.source_ip] || 0) + 1
         }
@@ -75,8 +75,33 @@ function Reports() {
   }
 
   const handleExportReport = (format) => {
-    alert(`Exporting report as ${format}...`)
-    // In a real implementation, this would generate and download the report
+    if (format === 'CSV') {
+      const headers = ['IP', 'Count', 'Threat Level'];
+      const data = Object.entries(summaryData.topSources)
+        .sort((a, b) => b[1] - a[1])
+        .map(([ip, count]) => [
+          ip,
+          count,
+          count > 50 ? 'High' : count > 20 ? 'Medium' : 'Low'
+        ]);
+
+      const csvContent = [
+        headers.join(','),
+        ...data.map(row => row.join(','))
+      ].join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `vanguard-report-${reportType}-${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else if (format === 'PDF') {
+      window.print();
+    }
   }
 
   const attackTypeData = summaryData ? Object.entries(summaryData.attackTypes)
@@ -89,13 +114,13 @@ function Reports() {
   return (
     <div className="min-h-screen bg-gray-100 p-8">
       <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold">Reports & Analytics</h1>
+        <div className="flex justify-between items-center mb-6 no-print">
+          <h1 className="text-3xl font-bold text-gray-900">Reports & Analytics</h1>
           <div className="flex space-x-2">
             <select
               value={reportType}
               onChange={(e) => setReportType(e.target.value)}
-              className="border rounded px-3 py-2"
+              className="border border-gray-200 rounded-xl px-4 py-2 bg-white shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
             >
               <option value="daily">Daily Report</option>
               <option value="weekly">Weekly Report</option>
@@ -104,15 +129,15 @@ function Reports() {
             </select>
             <button
               onClick={() => handleExportReport('PDF')}
-              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+              className="px-4 py-2 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 transition-colors shadow-sm flex items-center"
             >
-              Export PDF
+              <span className="mr-2">📄</span> Export PDF
             </button>
             <button
               onClick={() => handleExportReport('CSV')}
-              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+              className="px-4 py-2 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 transition-colors shadow-sm flex items-center"
             >
-              Export CSV
+              <span className="mr-2">📊</span> Export CSV
             </button>
           </div>
         </div>
@@ -121,43 +146,45 @@ function Reports() {
           <>
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-              <div className="bg-white rounded-lg shadow p-4">
-                <div className="text-sm text-gray-500">Total Alerts</div>
-                <div className="text-3xl font-bold text-blue-600">{summaryData.totalAlerts}</div>
+              <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-5 transition-all hover:border-blue-100">
+                <div className="text-sm text-gray-500 font-medium">Total Alerts</div>
+                <div className="text-3xl font-bold text-blue-600 mt-1">{summaryData.totalAlerts}</div>
               </div>
-              <div className="bg-white rounded-lg shadow p-4">
-                <div className="text-sm text-gray-500">High Severity</div>
-                <div className="text-3xl font-bold text-red-600">{summaryData.highSeverity}</div>
+              <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-5 transition-all hover:border-red-100">
+                <div className="text-sm text-gray-500 font-medium">High Severity</div>
+                <div className="text-3xl font-bold text-red-600 mt-1">{summaryData.highSeverity}</div>
               </div>
-              <div className="bg-white rounded-lg shadow p-4">
-                <div className="text-sm text-gray-500">Attack Types</div>
-                <div className="text-3xl font-bold text-purple-600">{Object.keys(summaryData.attackTypes).length}</div>
+              <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-5 transition-all hover:border-purple-100">
+                <div className="text-sm text-gray-500 font-medium">Attack Types</div>
+                <div className="text-3xl font-bold text-purple-600 mt-1">{Object.keys(summaryData.attackTypes).length}</div>
               </div>
-              <div className="bg-white rounded-lg shadow p-4">
-                <div className="text-sm text-gray-500">Unique Sources</div>
-                <div className="text-3xl font-bold text-green-600">{Object.keys(summaryData.topSources).length}</div>
+              <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-5 transition-all hover:border-green-100">
+                <div className="text-sm text-gray-500 font-medium">Unique Sources</div>
+                <div className="text-3xl font-bold text-green-600 mt-1">{Object.keys(summaryData.topSources).length}</div>
               </div>
             </div>
 
             {/* Time Distribution Chart */}
-            <div className="bg-white rounded-lg shadow p-6 mb-6">
-              <h2 className="text-xl font-bold mb-4">Alert Distribution Over Time (Last 24 Hours)</h2>
+            <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6 mb-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-4">Alert Distribution Over Time (Last 24 Hours)</h2>
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={summaryData.timeDistribution}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="hour" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Line type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={3} name="Alerts" />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                  <XAxis dataKey="hour" axisLine={false} tickLine={false} />
+                  <YAxis axisLine={false} tickLine={false} />
+                  <Tooltip
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                  />
+                  <Legend iconType="circle" />
+                  <Line type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={4} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} name="Alerts" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
               {/* Attack Types Distribution */}
-              <div className="bg-white rounded-lg shadow p-6">
-                <h2 className="text-xl font-bold mb-4">Attack Types Distribution</h2>
+              <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-4">Attack Types Distribution</h2>
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
                     <Pie
@@ -180,8 +207,8 @@ function Reports() {
               </div>
 
               {/* Attack Types Bar Chart */}
-              <div className="bg-white rounded-lg shadow p-6">
-                <h2 className="text-xl font-bold mb-4">Top Attack Types</h2>
+              <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-4">Top Attack Types</h2>
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={attackTypeData}>
                     <CartesianGrid strokeDasharray="3 3" />
@@ -195,8 +222,8 @@ function Reports() {
             </div>
 
             {/* Top Sources Table */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-bold mb-4">Top Source IPs</h2>
+            <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6 overflow-hidden">
+              <h2 className="text-xl font-bold text-gray-900 mb-4">Top Source IPs</h2>
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-gray-50">
@@ -217,11 +244,10 @@ function Reports() {
                           <td className="px-4 py-3 text-sm font-mono">{ip}</td>
                           <td className="px-4 py-3 text-sm">{count}</td>
                           <td className="px-4 py-3">
-                            <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                              count > 50 ? 'bg-red-100 text-red-800' :
-                              count > 20 ? 'bg-yellow-100 text-yellow-800' :
-                              'bg-green-100 text-green-800'
-                            }`}>
+                            <span className={`px-2 py-1 rounded text-xs font-semibold ${count > 50 ? 'bg-red-100 text-red-800' :
+                                count > 20 ? 'bg-yellow-100 text-yellow-800' :
+                                  'bg-green-100 text-green-800'
+                              }`}>
                               {count > 50 ? 'High' : count > 20 ? 'Medium' : 'Low'}
                             </span>
                           </td>

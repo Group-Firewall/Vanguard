@@ -23,12 +23,12 @@ function RealTimeFeed() {
   useEffect(() => {
     // Load initial alerts from API
     loadAlerts()
-    
+
     // Try to connect to WebSocket (with error handling)
     let websocket = null
     try {
       websocket = new WebSocket('ws://localhost:8000/ws/alerts')
-      
+
       websocket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data)
@@ -95,10 +95,10 @@ function RealTimeFeed() {
       const newStats = { ...prev }
       const severity = alert.severity || 'unknown'
       const alertType = alert.alert_type || 'unknown'
-      
+
       newStats.severity[severity] = (newStats.severity[severity] || 0) + 1
       newStats.alertType[alertType] = (newStats.alertType[alertType] || 0) + 1
-      
+
       return newStats
     })
   }
@@ -106,14 +106,14 @@ function RealTimeFeed() {
   const updateStatsFromAlerts = (alerts) => {
     const severityCount = {}
     const alertTypeCount = {}
-    
+
     alerts.forEach(alert => {
       const severity = alert.severity || 'unknown'
       const alertType = alert.alert_type || 'unknown'
       severityCount[severity] = (severityCount[severity] || 0) + 1
       alertTypeCount[alertType] = (alertTypeCount[alertType] || 0) + 1
     })
-    
+
     setStats({ severity: severityCount, alertType: alertTypeCount })
   }
 
@@ -157,7 +157,7 @@ function RealTimeFeed() {
   return (
     <div className="space-y-6">
       {/* Real-Time Alerts Feed */}
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-bold">Real-Time Attack Monitoring</h2>
           <div className="flex items-center space-x-4">
@@ -213,7 +213,7 @@ function RealTimeFeed() {
 
       {/* Attack Trends Line Chart */}
       {timeSeriesData.length > 0 && (
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6">
           <h3 className="text-lg font-bold mb-4">Attack Score Trends</h3>
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={timeSeriesData}>
@@ -222,10 +222,10 @@ function RealTimeFeed() {
               <YAxis />
               <Tooltip />
               <Legend />
-              <Line 
-                type="monotone" 
-                dataKey="score" 
-                stroke="#ef4444" 
+              <Line
+                type="monotone"
+                dataKey="score"
+                stroke="#ef4444"
                 strokeWidth={2}
                 name="Threat Score (%)"
               />
@@ -236,7 +236,7 @@ function RealTimeFeed() {
 
       {/* Severity Distribution Pie Chart */}
       {severityData.length > 0 && (
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6">
           <h3 className="text-lg font-bold mb-4">Severity Distribution</h3>
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
@@ -262,7 +262,7 @@ function RealTimeFeed() {
 
       {/* Alert Type Distribution */}
       {alertTypeData.length > 0 && (
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6">
           <h3 className="text-lg font-bold mb-4">Attack Type Distribution</h3>
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>

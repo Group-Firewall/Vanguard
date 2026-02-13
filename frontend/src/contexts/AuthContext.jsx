@@ -8,10 +8,12 @@ export const AuthProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Force fresh login on every app start/refresh by clearing existing token
-        localStorage.removeItem('token');
-        setUser(null);
-        setLoading(false);
+        const token = localStorage.getItem('token');
+        if (token) {
+            fetchCurrentUser();
+        } else {
+            setLoading(false);
+        }
     }, []);
 
     const fetchCurrentUser = async () => {
