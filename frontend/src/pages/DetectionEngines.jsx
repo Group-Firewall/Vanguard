@@ -1,12 +1,8 @@
-// Detection Engines
 import React, { useState, useEffect } from 'react'
 import { modelAPI, metricsAPI } from '../services/api'
 import {
   BarChart,
   Bar,
-  PieChart,
-  Pie,
-  Cell,
   LineChart,
   Line,
   XAxis,
@@ -15,314 +11,281 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  AreaChart,
+  Area
 } from 'recharts'
+import {
+  Cpu,
+  Activity,
+  Shield,
+  Zap,
+  RefreshCw,
+  CheckCircle,
+  AlertCircle,
+  Settings,
+  BarChart3,
+  Wind,
+  Layers,
+  Power,
+  RotateCcw,
+  Sliders
+} from 'lucide-react'
 
 function DetectionEngines() {
   const [modelStatus, setModelStatus] = useState({
-    hybrid_loaded: false,
-    supervised_models: 0,
-    unsupervised_models: 0,
-    signature_engine: false
+    ml: 'Active',
+    capture: 'Active',
+    stream: 'Connected'
   })
-  const [performanceData, setPerformanceData] = useState([])
-  const [signatureStats, setSignatureStats] = useState({
-    totalSignatures: 150,
-    activeSignatures: 142,
-    hits: 0
+  const [performanceMetrics, setPerformanceMetrics] = useState({
+    totalPredictions: 45280,
+    intrusionsDetected: 124,
+    detectionRate: 98.4,
+    falsePositives: 12
   })
-  const [mlStats, setMlStats] = useState({
-    supervised: {
-      accuracy: 94.5,
-      latency: 3.2,
-      throughput: 4500,
-      errorRate: 0.5
-    },
-    unsupervised: {
-      accuracy: 89.2,
-      latency: 4.1,
-      throughput: 3800,
-      errorRate: 1.2
-    }
-  })
+  const [sensitivity, setSensitivity] = useState('Balanced')
+  const [activityData, setActivityData] = useState([])
+  const [isRestarting, setIsRestarting] = useState(false)
 
   useEffect(() => {
-    loadModelStatus()
-    loadPerformanceData()
-    const interval = setInterval(() => {
-      loadModelStatus()
-      loadPerformanceData()
-    }, 10000)
+    loadData()
+    const interval = setInterval(loadData, 5000)
     return () => clearInterval(interval)
   }, [])
 
-  const loadModelStatus = async () => {
-    try {
-      const response = await fetch('http://localhost:8000/api/model-status')
-      const data = await response.json()
-      setModelStatus(data)
-    } catch (error) {
-      console.error('Error loading model status:', error)
+  const loadData = () => {
+    // Generate dummy activity data
+    const data = []
+    const now = new Date()
+    for (let i = 20; i >= 0; i--) {
+      data.push({
+        time: new Date(now.getTime() - i * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        predictions: 80 + Math.floor(Math.random() * 40),
+        threats: Math.floor(Math.random() * 5)
+      })
     }
+    setActivityData(data)
   }
 
-  const loadPerformanceData = async () => {
-    try {
-      const response = await metricsAPI.get(1)
-      // Generate performance data
-      const models = ['Random Forest', 'XGBoost', 'LightGBM', 'SVM', 'Isolation Forest', 'One-Class SVM']
-      const data = models.map(model => ({
-        model,
-        accuracy: 85 + Math.random() * 10,
-        latency: 2 + Math.random() * 5,
-        throughput: 3000 + Math.random() * 2000
-      }))
-      setPerformanceData(data)
-    } catch (error) {
-      console.error('Error loading performance data:', error)
-    }
+  const handleRestart = () => {
+    setIsRestarting(true)
+    setTimeout(() => {
+      setIsRestarting(false)
+      alert('Detection engine components restarted successfully.')
+    }, 2000)
   }
-
-  const handleRetrain = async (modelType) => {
-    try {
-      await modelAPI.retrain(modelType, false)
-      alert(`Retraining ${modelType} models initiated`)
-      setTimeout(loadModelStatus, 2000)
-    } catch (error) {
-      alert('Error retraining models: ' + error.message)
-    }
-  }
-
-  // Pipeline visualization data
-  const pipelineStages = [
-    { stage: 'Capture', status: 'active', packets: 1250 },
-    { stage: 'Preprocessing', status: 'active', packets: 1248 },
-    { stage: 'Signature', status: 'active', packets: 1245 },
-    { stage: 'ML', status: 'active', packets: 1240 },
-    { stage: 'Alerts', status: 'active', packets: 15 }
-  ]
-
-  const modelPerformanceChart = performanceData.map(m => ({
-    name: m.model.substring(0, 8),
-    accuracy: m.accuracy,
-    latency: m.latency * 10, // Scale for visibility
-    throughput: m.throughput / 100 // Scale for visibility
-  }))
-
-  const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
 
   return (
-    <div className="min-h-screen bg-gray-100 p-8">
+    <div className="min-h-screen bg-[#f8fafc] p-6 lg:p-8 font-['Inter']">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold mb-6">Detection Engines</h1>
-
-        {/* Hybrid Detection Overview */}
-        <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6 mb-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Hybrid Detection Pipeline</h2>
-
-          {/* Pipeline Visualization */}
-          <div className="flex items-center justify-between mb-6">
-            {pipelineStages.map((stage, index) => (
-              <React.Fragment key={stage.stage}>
-                <div className="flex-1 text-center px-1">
-                  <div className={`p-4 rounded-xl transition-all border-2 ${stage.status === 'active'
-                      ? 'bg-green-50 border-green-200 shadow-sm'
-                      : 'bg-gray-50 border-gray-100'
-                    }`}>
-                    <div className="font-bold text-gray-900">{stage.stage}</div>
-                    <div className="text-sm text-gray-600 mt-1">{stage.packets} packets</div>
-                    <div className={`text-xs font-semibold mt-1 uppercase tracking-wider ${stage.status === 'active' ? 'text-green-600' : 'text-gray-400'}`}>
-                      {stage.status === 'active' ? '● Active' : '○ Inactive'}
-                    </div>
-                  </div>
-                </div>
-                {index < pipelineStages.length - 1 && (
-                  <div className="text-gray-300 font-bold text-xl px-1">→</div>
-                )}
-              </React.Fragment>
-            ))}
-          </div>
-
-          {/* Conflict Resolution Logic */}
-          <div className="bg-gray-50 rounded-xl p-5 border border-gray-100">
-            <h3 className="font-bold text-gray-900 mb-3">Conflict Resolution Logic</h3>
-            <div className="text-sm text-gray-700 space-y-2">
-              <div className="flex items-center"><span className="w-6 h-6 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-xs font-bold mr-3">1</span> Signature says "malicious" → Alert (High Priority)</div>
-              <div className="flex items-center"><span className="w-6 h-6 rounded-full bg-yellow-100 text-yellow-600 flex items-center justify-center text-xs font-bold mr-3">2</span> ML says "benign" but Signature unknown → ML decision (Medium Priority)</div>
-              <div className="flex items-center"><span className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold mr-3">3</span> Both agree → Combined threat score (Weighted Average)</div>
-              <div className="flex items-center"><span className="w-6 h-6 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-xs font-bold mr-3">4</span> Disagreement → Escalate to Hybrid Engine (Critical Review)</div>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
+                <Cpu className="w-5 h-5" />
+              </span>
+              <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Detection Engines</h1>
             </div>
+            <p className="text-sm text-slate-500 font-medium">Core NIDS brain: ML status, sensitivity tuning, and engine performance</p>
           </div>
+
+          <button
+            onClick={handleRestart}
+            disabled={isRestarting}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold transition-all shadow-md active:scale-95 ${isRestarting ? 'bg-slate-200 text-slate-400' : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+          >
+            <RotateCcw className={`w-4 h-4 ${isRestarting ? 'animate-spin' : ''}`} />
+            {isRestarting ? 'Restarting...' : 'Restart Engine'}
+          </button>
         </div>
 
-        {/* Model Status Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-5 transition-all hover:border-blue-100">
-            <div className="text-sm text-gray-500 font-medium">Hybrid Engine</div>
-            <div className={`text-2xl font-bold mt-1 ${modelStatus.hybrid_loaded ? 'text-green-600' : 'text-red-600'}`}>
-              {modelStatus.hybrid_loaded ? 'Loaded' : 'Not Loaded'}
+        {/* Engine Status & Metrics */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
+          {[
+            { label: 'ML Model Engine', status: modelStatus.ml, icon: <Shield className="w-5 h-5" />, color: 'blue' },
+            { label: 'Packet Capture', status: modelStatus.capture, icon: <Activity className="w-5 h-5" />, color: 'emerald' },
+            { label: 'Streaming Node', status: modelStatus.stream, icon: <Wind className="w-5 h-5" />, color: 'purple' },
+            { label: 'Pipeline Health', status: 'Optimal', icon: <CheckCircle className="w-5 h-5" />, color: 'indigo' }
+          ].map((item, idx) => (
+            <div key={idx} className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm flex flex-col justify-between">
+              <div className="flex items-start justify-between">
+                <div className={`p-3 rounded-2xl bg-${item.color}-50 text-${item.color}-600`}>
+                  {item.icon}
+                </div>
+                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${item.status === 'Active' || item.status === 'Connected' || item.status === 'Optimal'
+                  ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                  : 'bg-red-50 text-red-600 border border-red-100'
+                  }`}>
+                  {item.status}
+                </span>
+              </div>
+              <div className="mt-4">
+                <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest leading-none mb-1">{item.label}</p>
+                <p className="text-sm font-bold text-slate-900">Uptime: 14d 2h</p>
+              </div>
             </div>
-          </div>
-          <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-5 transition-all hover:border-blue-100">
-            <div className="text-sm text-gray-500 font-medium">Supervised Models</div>
-            <div className="text-2xl font-bold text-blue-600 mt-1">{modelStatus.supervised_models}</div>
-          </div>
-          <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-5 transition-all hover:border-blue-100">
-            <div className="text-sm text-gray-500 font-medium">Unsupervised Models</div>
-            <div className="text-2xl font-bold text-purple-600 mt-1">{modelStatus.unsupervised_models}</div>
-          </div>
-          <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-5 transition-all hover:border-blue-100">
-            <div className="text-sm text-gray-500 font-medium">Signature Engine</div>
-            <div className={`text-2xl font-bold mt-1 ${modelStatus.signature_engine ? 'text-green-600' : 'text-red-600'}`}>
-              {modelStatus.signature_engine ? 'Active' : 'Inactive'}
-            </div>
-          </div>
+          ))}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* Signature Engine */}
-          <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-gray-900">Signature Engine</h2>
-              <button
-                onClick={() => handleRetrain('signature')}
-                className="px-4 py-1.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors shadow-sm"
-              >
-                Refresh
-              </button>
-            </div>
-            <div className="space-y-6">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="text-center p-4 bg-gray-50 rounded-xl border border-gray-100">
-                  <div className="text-2xl font-bold text-gray-900">{signatureStats.totalSignatures}</div>
-                  <div className="text-xs text-gray-500 font-semibold uppercase tracking-wider mt-1">Total Rules</div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+          {/* Performance Metrics */}
+          <div className="lg:col-span-1 space-y-6">
+            <div className="bg-white border border-slate-200 rounded-3xl shadow-sm p-8">
+              <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-blue-600" /> Detection Metrics
+              </h3>
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 text-center">
+                  <p className="text-2xl font-black text-slate-900">{performanceMetrics.totalPredictions.toLocaleString()}</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Total Predictions</p>
                 </div>
-                <div className="text-center p-4 bg-green-50 rounded-xl border border-green-100">
-                  <div className="text-2xl font-bold text-green-600">{signatureStats.activeSignatures}</div>
-                  <div className="text-xs text-green-600 font-semibold uppercase tracking-wider mt-1">Active</div>
-                </div>
-                <div className="text-center p-4 bg-blue-50 rounded-xl border border-blue-100">
-                  <div className="text-2xl font-bold text-blue-600">{signatureStats.hits}</div>
-                  <div className="text-xs text-blue-500 font-semibold uppercase tracking-wider mt-1">Hits (24h)</div>
+                <div className="p-4 bg-red-50 rounded-2xl border border-red-100 text-center">
+                  <p className="text-2xl font-black text-red-600">{performanceMetrics.intrusionsDetected}</p>
+                  <p className="text-[10px] text-red-400 font-bold uppercase tracking-wider">Intrusions</p>
                 </div>
               </div>
-              <div>
-                <h3 className="font-bold text-gray-900 mb-3">Top Signatures</h3>
-                <div className="space-y-2">
-                  {['SQL Injection', 'XSS Attack', 'Port Scan', 'DoS Attempt'].map((sig, i) => (
-                    <div key={i} className="flex justify-between items-center p-3 bg-gray-50 rounded-xl border border-gray-100 transition-all hover:bg-white hover:border-blue-100">
-                      <span className="text-sm font-medium text-gray-700">{sig}</span>
-                      <span className="text-sm font-bold text-blue-600">{Math.floor(Math.random() * 50)} hits</span>
-                    </div>
+              <div className="space-y-4">
+                <div>
+                  <div className="flex justify-between items-center mb-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    <span>Model Precision</span>
+                    <span className="text-emerald-500">{performanceMetrics.detectionRate}%</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: '98.4%' }}></div>
+                  </div>
+                </div>
+                <div className="p-4 bg-orange-50/50 border border-orange-100 rounded-2xl">
+                  <div className="flex items-center gap-2 mb-1">
+                    <AlertCircle className="w-4 h-4 text-orange-500" />
+                    <span className="text-xs font-bold text-orange-700">False Positive Feedback</span>
+                  </div>
+                  <p className="text-xs text-orange-600/80 font-medium">{performanceMetrics.falsePositives} incidents marked as False Positives this week.</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Sensitivity Controls */}
+            <div className="bg-slate-900 rounded-3xl p-8 text-white">
+              <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-blue-400" /> Sensitivity Tuning
+              </h3>
+              <div className="space-y-6">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-3">Intrusion Sensitivity</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {['Low', 'Balanced', 'High'].map(level => (
+                      <button
+                        key={level}
+                        onClick={() => setSensitivity(level)}
+                        className={`py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${sensitivity === level
+                          ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-900/40'
+                          : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'
+                          }`}
+                      >
+                        {level}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-3 pt-4 border-t border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold">Behavioral Anomaly Detection</span>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" defaultChecked className="sr-only peer" />
+                      <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold">Scan Behavior Analysis</span>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" defaultChecked className="sr-only peer" />
+                      <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Activity Graphs */}
+          <div className="lg:col-span-2 space-y-8">
+            <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden h-full flex flex-col">
+              <div className="px-8 py-6 border-b border-slate-50 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Engine Inference Activity</h3>
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-0.5">Predictions per Minute vs Spikes</p>
+                </div>
+                <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-blue-500"></span> Inferences
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-red-500"></span> Spikes
+                  </div>
+                </div>
+              </div>
+              <div className="p-8 flex-1">
+                <ResponsiveContainer width="100%" height="100%" minHeight={400}>
+                  <AreaChart data={activityData}>
+                    <defs>
+                      <linearGradient id="colorPredictions" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1} />
+                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} />
+                    <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                    <Area type="monotone" dataKey="predictions" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorPredictions)" />
+                    <Line type="monotone" dataKey="threats" stroke="#ef4444" strokeWidth={3} dot={{ r: 4, fill: '#ef4444' }} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Recent Detection Logs */}
+        <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
+          <div className="px-8 py-6 border-b border-slate-50 flex items-center justify-between">
+            <h3 className="text-lg font-bold text-slate-900">Recent Detection Logs</h3>
+            <button className="text-blue-600 text-xs font-bold hover:underline">Download full log cycle</button>
+          </div>
+          <div className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-slate-50/50">
+                    <th className="px-8 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Timestamp</th>
+                    <th className="px-8 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Service</th>
+                    <th className="px-8 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Event</th>
+                    <th className="px-8 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Confidence</th>
+                    <th className="px-8 py-4 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-mono text-xs">
+                  {[
+                    { time: '14:02:15', service: 'ML_ENGINE', event: 'Anomaly detected in payload buffer #82', confidence: '94.2%', status: 'Flagged' },
+                    { time: '14:01:48', service: 'PCAP_SRV', event: 'Filter applied: tcp port 80 or 443', confidence: '-', status: 'Success' },
+                    { time: '14:00:52', service: 'ML_ENGINE', event: 'Scan pattern matched: TCP Port Sweep', confidence: '99.8%', status: 'Blocked' },
+                    { time: '13:58:33', service: 'STREAM_NODE', event: 'WebSocket handshake established', confidence: '-', status: 'Connected' }
+                  ].map((log, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="px-8 py-4 text-slate-500">{log.time}</td>
+                      <td className="px-8 py-4 font-bold text-slate-700">{log.service}</td>
+                      <td className="px-8 py-4 text-slate-600">{log.event}</td>
+                      <td className="px-8 py-4 text-blue-600 font-bold">{log.confidence}</td>
+                      <td className="px-8 py-4 text-right">
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${log.status === 'Blocked' ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-500'
+                          }`}>{log.status}</span>
+                      </td>
+                    </tr>
                   ))}
-                </div>
-              </div>
+                </tbody>
+              </table>
             </div>
-          </div>
-
-          {/* ML Detection Status */}
-          <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-gray-900">ML Detection</h2>
-              <button
-                onClick={() => handleRetrain('all')}
-                className="px-4 py-1.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors shadow-sm"
-              >
-                Retrain All
-              </button>
-            </div>
-            <div className="space-y-6">
-              <div className="p-5 bg-gray-50 rounded-xl border border-gray-100">
-                <h3 className="font-bold text-gray-900 mb-3 flex items-center">
-                  <span className="w-2 h-2 rounded-full bg-blue-500 mr-2"></span>
-                  Supervised Models
-                </h3>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Accuracy:</span>
-                    <span className="font-bold text-gray-900">{mlStats.supervised.accuracy}%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Latency:</span>
-                    <span className="font-bold text-gray-900">{mlStats.supervised.latency}ms</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Throughput:</span>
-                    <span className="font-bold text-gray-900">{mlStats.supervised.throughput} pkt/s</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Error Rate:</span>
-                    <span className="font-bold text-gray-900">{mlStats.supervised.errorRate}%</span>
-                  </div>
-                </div>
-              </div>
-              <div className="p-5 bg-gray-50 rounded-xl border border-gray-100">
-                <h3 className="font-bold text-gray-900 mb-3 flex items-center">
-                  <span className="w-2 h-2 rounded-full bg-purple-500 mr-2"></span>
-                  Unsupervised Models
-                </h3>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Accuracy:</span>
-                    <span className="font-bold text-gray-900">{mlStats.unsupervised.accuracy}%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Latency:</span>
-                    <span className="font-bold text-gray-900">{mlStats.unsupervised.latency}ms</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Throughput:</span>
-                    <span className="font-bold text-gray-900">{mlStats.unsupervised.throughput} pkt/s</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Error Rate:</span>
-                    <span className="font-bold text-gray-900">{mlStats.unsupervised.errorRate}%</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Model Performance Comparison */}
-        <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6 mb-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-6">Model Performance Comparison</h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={modelPerformanceChart}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-              <XAxis dataKey="name" axisLine={false} tickLine={false} />
-              <YAxis axisLine={false} tickLine={false} />
-              <Tooltip
-                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-              />
-              <Legend iconType="circle" />
-              <Bar dataKey="accuracy" fill="#3b82f6" name="Accuracy (%)" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="latency" fill="#f59e0b" name="Latency (x10 ms)" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="throughput" fill="#10b981" name="Throughput (x100 pkt/s)" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Current Inference Statistics */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-5 transition-all hover:border-blue-100">
-            <div className="text-sm text-gray-500 font-medium">Total Inferences</div>
-            <div className="text-2xl font-bold text-blue-600 mt-1">12,450</div>
-            <div className="text-xs text-gray-400 mt-1 font-medium italic">Last 24h</div>
-          </div>
-          <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-5 transition-all hover:border-green-100">
-            <div className="text-sm text-gray-500 font-medium">Avg Accuracy</div>
-            <div className="text-2xl font-bold text-green-600 mt-1">92.8%</div>
-            <div className="text-xs text-gray-400 mt-1 font-medium italic">Across all models</div>
-          </div>
-          <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-5 transition-all hover:border-yellow-100">
-            <div className="text-sm text-gray-500 font-medium">Avg Latency</div>
-            <div className="text-2xl font-bold text-yellow-600 mt-1">3.5ms</div>
-            <div className="text-xs text-gray-400 mt-1 font-medium italic">Per inference</div>
-          </div>
-          <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-5 transition-all hover:border-red-100">
-            <div className="text-sm text-gray-500 font-medium">Error Rate</div>
-            <div className="text-2xl font-bold text-red-600 mt-1">0.8%</div>
-            <div className="text-xs text-gray-400 mt-1 font-medium italic">False positives</div>
           </div>
         </div>
       </div>

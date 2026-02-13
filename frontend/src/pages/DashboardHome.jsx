@@ -374,8 +374,64 @@ function DashboardHome() {
             </div>
           </div>
 
+          {/* New Chart: Geographic Threat Source */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
+            <h3 className="text-base font-bold mb-1">Top Attack Origins</h3>
+            <p className="text-[10px] text-slate-400 font-bold uppercase mb-6">Global Threat Distribution</p>
+            <div className="h-[200px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={[
+                  { country: 'US', hits: 450 },
+                  { country: 'CN', hits: 380 },
+                  { country: 'RU', hits: 290 },
+                  { country: 'BR', hits: 120 },
+                  { country: 'DE', hits: 80 }
+                ]}>
+                  <XAxis dataKey="country" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} />
+                  <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none' }} />
+                  <Bar dataKey="hits" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={20} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-4 flex justify-between text-[10px] font-bold text-slate-400 uppercase">
+              <span>Primary: North America</span>
+              <span className="text-blue-600">Scale: Logarithmic</span>
+            </div>
+          </div>
+
+          {/* New Chart: Engine Inference Velocity */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
+            <h3 className="text-base font-bold mb-1">Engine Inference</h3>
+            <p className="text-[10px] text-slate-400 font-bold uppercase mb-6">Performance Activity</p>
+            <div className="h-[200px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={[
+                  { time: '10:00', load: 45 },
+                  { time: '10:10', load: 52 },
+                  { time: '10:20', load: 48 },
+                  { time: '10:30', load: 70 },
+                  { time: '10:40', load: 61 },
+                  { time: '10:50', load: 55 }
+                ]}>
+                  <defs>
+                    <linearGradient id="colorLoad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.1} />
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <Tooltip contentStyle={{ borderRadius: '12px', border: 'none' }} />
+                  <Area type="monotone" dataKey="load" stroke="#10b981" fillOpacity={1} fill="url(#colorLoad)" strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-4 flex justify-between items-center">
+              <span className="text-[10px] font-bold text-green-600 uppercase">Pipeline: Stable</span>
+              <span className="text-[10px] font-black text-slate-900">AVG: 52ms</span>
+            </div>
+          </div>
+
           {/* Alerts Summary */}
-          <div className="lg:col-span-2 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm overflow-hidden">
+          <div className="lg:col-span-1 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm overflow-hidden">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-base font-bold">Latest Security Events</h3>
               <button
@@ -415,32 +471,33 @@ function DashboardHome() {
               {recentAlerts.length === 0 && <p className="text-sm text-slate-400 text-center py-12">No recent anomalies detected</p>}
             </div>
           </div>
+        </div>
 
-          {/* Mini Live Preview Feed */}
+        {/* Mini Live Preview Feed row */}
+        <div className="grid grid-cols-1 lg:grid-cols-1 gap-8">
           <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm overflow-hidden">
             <h3 className="text-base font-bold mb-6 flex items-center gap-2">
-              <Activity className="w-4 h-4 text-blue-600" /> Live Stream
+              <Activity className="w-4 h-4 text-blue-600" /> Live Stream Feed
             </h3>
-            <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
               {liveTraffic.map((p, i) => (
-                <div key={i} className="flex items-center gap-3 animate-in slide-in-from-right-2 duration-300">
-                  <div className={`w-1.5 h-1.5 rounded-full ${p.is_intrusion ? 'bg-red-500 animate-pulse' : 'bg-blue-400'}`}></div>
+                <div key={i} className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl animate-in slide-in-from-right-2 duration-300">
+                  <div className={`w-2 h-2 rounded-full ${p.is_intrusion ? 'bg-red-500 animate-pulse' : 'bg-blue-400'}`}></div>
                   <div className="flex-grow min-w-0">
                     <div className="flex justify-between items-center mb-0.5">
                       <p className="text-[10px] font-mono font-bold text-slate-700 truncate">{p.src_ip}</p>
                       <span className="text-[9px] font-bold text-slate-400">{p.protocol}</span>
                     </div>
                     {p.is_intrusion && (
-                      <span className="text-[8px] font-black text-red-600 uppercase tracking-tighter">Blocking...</span>
+                      <span className="text-[8px] font-black text-red-600 uppercase tracking-tighter">Mitigating...</span>
                     )}
                   </div>
                 </div>
               ))}
-              {liveTraffic.length === 0 && <p className="text-center py-8 text-xs text-slate-400 animate-pulse">Waiting for traffic...</p>}
+              {liveTraffic.length === 0 && <p className="col-span-5 text-center py-8 text-xs text-slate-400 animate-pulse">Waiting for traffic stream...</p>}
             </div>
           </div>
         </div>
-
       </main>
     </div>
   )
