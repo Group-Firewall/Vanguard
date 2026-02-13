@@ -1,8 +1,8 @@
 # Vanguard – Machine Learning Based Network Intrusion Detection System (NIDS)
 
-A production-grade Network Intrusion Detection System that combines signature-based detection with machine learning models for detecting both known and zero-day network intrusions.
+A production-grade Network Intrusion Detection System that combines signature-based detection with machine learning models for detecting both known and zero-day(unknown) network intrusions.
 
-## 🏗️ System Architecture
+## 🏗️ System Architecture  
 
 ```
 ┌─────────────────┐
@@ -270,6 +270,8 @@ pytest backend/tests/integration/
 2. Create a feature branch
 3. Make your changes
 4. Submit a pull request
+5. Await for merge
+
 
 ## 📝 License
 

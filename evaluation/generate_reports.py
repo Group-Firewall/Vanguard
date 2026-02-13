@@ -20,7 +20,7 @@ plt.rcParams['figure.figsize'] = (12, 8)
 
 class ReportGenerator:
     """Generate evaluation reports"""
-    
+    #initialize load results
     def __init__(self):
         self.reports_path = Path(settings.DATA_PATH) / "reports"
         self.reports_path.mkdir(parents=True, exist_ok=True)

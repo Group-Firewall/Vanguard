@@ -200,11 +200,11 @@ const predict = async (packetData) => {
 - Check: `backend/models/hybrid/hybrid.pkl` exists
 
 ### CORS Errors
-- Already enabled in `main.py` lines 16-22
+- Already enabled in `main.py` between lines 16-22
 - Verify frontend URL matches allowed origins
 
 ### Database Connection
 - Check `.env` file for `DATABASE_URL`
 - Verify MySQL is running
-- Test connection: `python -c "from app.database import engine; print('Connected!')"`
+- Testing connection: `python -c "from app.database import engine; print('Connected!')"`
 

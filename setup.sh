@@ -17,7 +17,7 @@ echo "Installing Python dependencies..."
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# Initialize database
+# Initialization of the database
 echo "Initializing database..."
 cd backend
 python -m app.database
@@ -44,7 +44,7 @@ cd frontend
 npm install
 
 cd ..
-
+# Note: Run these commands in separate terminal windows for full functionality
 echo "Setup complete!"
 echo ""
 echo "To start the backend:"
@@ -52,4 +52,4 @@ echo "  cd backend && uvicorn app.main:app --reload"
 echo ""
 echo "To start the frontend:"
 echo "  cd frontend && npm run dev"
-
+# Run instructions after setup
