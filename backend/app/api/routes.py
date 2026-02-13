@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta
+import asyncio
 
 from app.database import get_db
 from app import schemas
@@ -10,7 +11,13 @@ from app.services.packet_capture import PacketCaptureService
 from app.services.detection_engine import DetectionEngine
 from app.services.alert_manager import AlertManager
 from app.services.model_service import ModelService
+from app.services.report_service import generate_capture_report
 from app.models import Alert, Metric, ModelPerformance
+from app.workers.background_tasks import (
+    start_background_processing,
+    stop_background_processing,
+    processor,
+)
 
 router = APIRouter()
 
@@ -43,6 +50,12 @@ async def start_capture(
             db=db
         )
         
+        # Ensure background processing (feature extraction + ML + alerts +
+        # metrics broadcasting) is running while capture is active.
+        if not processor.is_processing:
+            # Fire-and-forget task on the event loop
+            asyncio.create_task(start_background_processing())
+        
         return schemas.CaptureStatusResponse(
             is_capturing=True,
             packets_captured=0,
@@ -54,11 +67,22 @@ async def start_capture(
 
 
 @router.post("/capture/stop", response_model=schemas.CaptureStatusResponse)
-async def stop_capture():
+async def stop_capture(db: Session = Depends(get_db)):
     """Stop packet capture"""
     try:
         capture_service.stop_capture()
+        # Stop the background ML processing loop
+        stop_background_processing()
         packet_count = capture_service.get_packet_count()
+        
+        # Generate a lightweight capture report on disk so the operator has a
+        # persisted record of what was seen during this session. Any failures
+        # here should not break the API.
+        try:
+            generate_capture_report(db)
+        except Exception as report_err:
+            print(f"Error generating capture report: {report_err}")
+        
         return schemas.CaptureStatusResponse(
             is_capturing=False,
             packets_captured=packet_count,

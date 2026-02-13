@@ -1,5 +1,6 @@
 """Background tasks for real-time processing"""
 import asyncio
+import json
 from typing import Dict, List
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
@@ -11,7 +12,7 @@ from app.services.alert_manager import AlertManager
 from app.services.feature_extraction import FeatureExtractionService
 from app.models import Packet, Metric
 from app.database import SessionLocal
-from app.api.websocket import broadcast_alert, broadcast_metrics
+from app.api.websocket import broadcast_alert, broadcast_metrics, broadcast_packet
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -86,6 +87,21 @@ class BackgroundProcessor:
                                     'timestamp': str(alert.timestamp),
                                     'threat_score': alert.threat_score
                                 })
+                        
+                        # Broadcast EVERY packet for live monitoring
+                        await broadcast_packet({
+                            'id': packet.id,
+                            'timestamp': str(packet.timestamp),
+                            'src_ip': packet.src_ip,
+                            'dst_ip': packet.dst_ip,
+                            'src_port': packet.src_port,
+                            'dst_port': packet.dst_port,
+                            'protocol': packet.protocol,
+                            'packet_size': packet.packet_size,
+                            'is_intrusion': 1 if detection_result.get('is_malicious', False) else 0,
+                            'scan_type': detection_result.get('attack_type', 'Normal'),
+                            'raw_summary': json.loads(packet.raw_data).get('summary', '') if packet.raw_data else ''
+                        })
                         
                         self.processed_count += 1
                         

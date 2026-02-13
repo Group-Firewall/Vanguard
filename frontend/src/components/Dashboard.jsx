@@ -5,7 +5,7 @@ import EnhancedMetrics from './EnhancedMetrics'
 import FeatureImportance from './FeatureImportance'
 import AttackStatistics from './AttackStatistics'
 import ConnectionStatus from './ConnectionStatus'
-import TestDataButton from './TestDataButton'
+import CaptureEmptyState from './CaptureEmptyState'
 import { captureAPI, metricsAPI } from '../services/api'
 
 function Dashboard() {
@@ -126,8 +126,10 @@ function Dashboard() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Test Data Button - Show if no metrics */}
-        {(!metrics || (metrics.packet_volume === 0 && metrics.attack_rate === 0)) && <TestDataButton />}
+        {/* Empty state: use real data from capture; test data optional (dev only) */}
+        {(!metrics || (metrics.packet_volume === 0 && !captureStatus.is_capturing)) && (
+          <CaptureEmptyState />
+        )}
         
         {/* Top Row - Full Width Statistics */}
         <div className="mb-6">

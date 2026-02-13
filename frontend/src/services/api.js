@@ -9,6 +9,18 @@ const api = axios.create({
   },
 })
 
+// Add auth interceptor
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
+  (error) => Promise.reject(error)
+)
+
 export const captureAPI = {
   start: (interface_name = null, filter = null) =>
     api.post('/capture/start', { interface: interface_name, filter }),
@@ -38,6 +50,12 @@ export const modelAPI = {
 
 export const testDataAPI = {
   create: () => api.post('/test-data/create'),
+}
+
+export const firewallAPI = {
+  block: (ip) => api.post('/firewall/block', { ip }),
+  unblock: (ip) => api.post('/firewall/unblock', { ip }),
+  list: () => api.get('/firewall/list'),
 }
 
 // Add error interceptor for better debugging

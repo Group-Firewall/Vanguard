@@ -1,0 +1,1 @@
+id,timestamp,severity,alert_type,source_ip,destination_ip,protocol,description,threat_score,hybrid_score

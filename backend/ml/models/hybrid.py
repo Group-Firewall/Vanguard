@@ -74,23 +74,37 @@ class HybridDetectionEngine:
         self.ml_threshold = settings.ML_ANOMALY_THRESHOLD
     
     def load_models(self):
-        """Load all detection models"""
+        """Load all detection models. Missing .pkl files are normal before first training."""
         try:
-            # Load supervised models
+            # Load supervised models (optional; missing files are expected until you train)
             supervised_models = ['random_forest', 'xgboost', 'lightgbm']
             for model_name in supervised_models:
                 try:
                     self.supervised_trainer.load_model(model_name)
+                except FileNotFoundError:
+                    logger.debug(f"Pre-trained supervised model '{model_name}' not found (optional).")
                 except Exception as e:
                     logger.warning(f"Could not load {model_name}: {e}")
             
-            # Load unsupervised models
+            # Load unsupervised models (optional; missing files are expected until you train)
             unsupervised_models = ['isolation_forest', 'one_class_svm']
             for model_name in unsupervised_models:
                 try:
                     self.unsupervised_trainer.load_model(model_name)
+                except FileNotFoundError:
+                    logger.debug(f"Pre-trained unsupervised model '{model_name}' not found (optional).")
                 except Exception as e:
                     logger.warning(f"Could not load {model_name}: {e}")
+            
+            n_sup = len(self.supervised_trainer.models)
+            n_unsup = len(self.unsupervised_trainer.models)
+            if n_sup == 0 and n_unsup == 0:
+                logger.info(
+                    "Detection ready: signature-based rules active. "
+                    "No pre-trained ML models found yet — train via API /api/model/retrain or data pipeline to enable ML detection."
+                )
+            else:
+                logger.info(f"Detection ready: {n_sup} supervised + {n_unsup} unsupervised models loaded, signatures active.")
         except Exception as e:
             logger.error(f"Error loading models: {e}")
     

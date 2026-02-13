@@ -32,29 +32,25 @@ function EnhancedMetrics({ metrics: propsMetrics }) {
     setMetrics(propsMetrics)
     if (propsMetrics) {
       setLoading(false)
-      
-      // Create time series data
       const now = new Date()
       const data = []
-      const basePackets = propsMetrics.packet_volume || 100
-      const baseAttacks = propsMetrics.attack_rate || 5
-      const baseThroughput = propsMetrics.throughput || 50
-      
+      const basePackets = propsMetrics.packet_volume || 0
+      const baseAttacks = propsMetrics.attack_rate || 0
+      const baseThroughput = propsMetrics.throughput || 0
+      // Use real values only; no synthetic variation so dashboard reflects backend data
       for (let i = 19; i >= 0; i--) {
-        const time = new Date(now.getTime() - i * 60000) // Last 20 minutes
-        const variation = 0.7 + Math.random() * 0.6
+        const time = new Date(now.getTime() - i * 60000)
         data.push({
           time: time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-          packets: Math.floor(basePackets * variation),
-          attacks: Math.floor(baseAttacks * variation),
-          throughput: parseFloat((baseThroughput * variation).toFixed(2)),
-          latency: (propsMetrics.latency_ms || 5) * variation,
-          fpRate: (propsMetrics.false_positive_rate || 2) * variation
+          packets: basePackets,
+          attacks: baseAttacks,
+          throughput: baseThroughput,
+          latency: propsMetrics.latency_ms || 0,
+          fpRate: propsMetrics.false_positive_rate || 0
         })
       }
       setTimeSeriesData(data)
     } else {
-      // Create default time series if no metrics
       const now = new Date()
       const data = []
       for (let i = 19; i >= 0; i--) {
@@ -85,24 +81,21 @@ function EnhancedMetrics({ metrics: propsMetrics }) {
     try {
       const response = await metricsAPI.get(1)
       setMetrics(response.data)
-      
-      // Create time series data
+      const d = response.data || {}
       const now = new Date()
       const data = []
-      const basePackets = response.data.packet_volume || 100
-      const baseAttacks = response.data.attack_rate || 5
-      const baseThroughput = response.data.throughput || 50
-      
+      const basePackets = d.packet_volume || 0
+      const baseAttacks = d.attack_rate || 0
+      const baseThroughput = d.throughput || 0
       for (let i = 19; i >= 0; i--) {
         const time = new Date(now.getTime() - i * 60000)
-        const variation = 0.7 + Math.random() * 0.6
         data.push({
           time: time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-          packets: Math.floor(basePackets * variation),
-          attacks: Math.floor(baseAttacks * variation),
-          throughput: parseFloat((baseThroughput * variation).toFixed(2)),
-          latency: (response.data.latency_ms || 5) * variation,
-          fpRate: (response.data.false_positive_rate || 2) * variation
+          packets: basePackets,
+          attacks: baseAttacks,
+          throughput: baseThroughput,
+          latency: d.latency_ms || 0,
+          fpRate: d.false_positive_rate || 0
         })
       }
       setTimeSeriesData(data)
@@ -137,7 +130,7 @@ function EnhancedMetrics({ metrics: propsMetrics }) {
     { name: 'Attacks', value: metricsData.attack_rate || 0 },
   ]
 
-  // Model confidence data
+  // Model confidence from backend (real data only; no fake defaults)
   const modelConfidenceData = Object.entries(metricsData.model_confidence || {}).map(
     ([model, confidence]) => ({
       model: model.replace('_', ' ').toUpperCase(),
@@ -145,23 +138,16 @@ function EnhancedMetrics({ metrics: propsMetrics }) {
     })
   )
 
-  // If no model confidence, create default
-  if (modelConfidenceData.length === 0) {
-    modelConfidenceData.push(
-      { model: 'RANDOM FOREST', confidence: 92.5 },
-      { model: 'XGBOOST', confidence: 94.2 },
-      { model: 'LIGHTGBM', confidence: 93.8 },
-      { model: 'SVM', confidence: 89.5 }
-    )
-  }
-
-  // Performance radar chart data
+  // Performance radar: use real metrics when available; otherwise zeros
+  const avgConfidence = modelConfidenceData.length
+    ? modelConfidenceData.reduce((s, d) => s + d.confidence, 0) / modelConfidenceData.length
+    : 0
   const performanceData = [
-    { subject: 'Accuracy', A: (metricsData.attack_rate > 0 ? 85 : 95), fullMark: 100 },
-    { subject: 'Precision', A: 90, fullMark: 100 },
-    { subject: 'Recall', A: 88, fullMark: 100 },
-    { subject: 'Speed', A: 95, fullMark: 100 },
-    { subject: 'Reliability', A: 92, fullMark: 100 },
+    { subject: 'Accuracy', A: avgConfidence, fullMark: 100 },
+    { subject: 'Precision', A: avgConfidence, fullMark: 100 },
+    { subject: 'Recall', A: avgConfidence, fullMark: 100 },
+    { subject: 'Speed', A: Math.max(0, 100 - (metricsData.latency_ms || 0)), fullMark: 100 },
+    { subject: 'Reliability', A: Math.max(0, 100 - (metricsData.false_positive_rate || 0)), fullMark: 100 },
   ]
 
   const COLORS = ['#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899']
@@ -257,18 +243,22 @@ function EnhancedMetrics({ metrics: propsMetrics }) {
           </ResponsiveContainer>
         </div>
 
-        {/* Model Confidence Bar Chart */}
+        {/* Model Confidence Bar Chart (real data from backend only) */}
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-lg font-bold mb-4">Model Confidence</h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={modelConfidenceData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="model" angle={-45} textAnchor="end" height={80} />
-              <YAxis domain={[0, 100]} />
-              <Tooltip formatter={(value) => `${value}%`} />
-              <Bar dataKey="confidence" fill="#3b82f6" />
-            </BarChart>
-          </ResponsiveContainer>
+          {modelConfidenceData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={250}>
+              <BarChart data={modelConfidenceData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="model" angle={-45} textAnchor="end" height={80} />
+                <YAxis domain={[0, 100]} />
+                <Tooltip formatter={(value) => `${value}%`} />
+                <Bar dataKey="confidence" fill="#3b82f6" />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="text-gray-400 text-sm">No model data yet. Train models or run capture to see real confidence.</p>
+          )}
         </div>
       </div>
 
