@@ -52,6 +52,12 @@ export const testDataAPI = {
   create: () => api.post('/test-data/create'),
 }
 
+export const firewallAPI = {
+  block: (ip) => api.post('/firewall/block', { ip }),
+  unblock: (ip) => api.post('/firewall/unblock', { ip }),
+  list: () => api.get('/firewall/list'),
+}
+
 // Add error interceptor for better debugging
 api.interceptors.response.use(
   (response) => response,

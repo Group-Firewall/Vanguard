@@ -113,3 +113,11 @@ async def broadcast_metrics(metrics_data: dict):
         "type": "metrics",
         "data": metrics_data
     })
+
+
+async def broadcast_packet(packet_data: dict):
+    """Broadcast real-time packet data to all connected clients"""
+    await manager.broadcast({
+        "type": "packet",
+        "data": packet_data
+    })

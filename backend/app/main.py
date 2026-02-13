@@ -28,8 +28,9 @@ app.add_middleware(
 )
 
 # Include routers
-from app.api import auth
+from app.api import auth, firewall
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(firewall.router, prefix="/api/firewall", tags=["firewall"])
 app.include_router(routes.router, prefix="/api", tags=["api"])
 app.include_router(websocket.router, prefix="/ws", tags=["websocket"])
 

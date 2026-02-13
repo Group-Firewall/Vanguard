@@ -55,6 +55,7 @@ function AlertsIncidents() {
     protocol: 'all',
     severity: 'all'
   })
+  const [exportPeriod, setExportPeriod] = useState('24h')
 
   useEffect(() => {
     loadAlerts()
@@ -101,6 +102,33 @@ function AlertsIncidents() {
     resolved: filteredAlerts.filter(a => a.resolved).length,
   }), [filteredAlerts]);
 
+  const handleExportCSV = () => {
+    const headers = ['Timestamp', 'Source IP', 'Destination IP', 'Type', 'Severity', 'Risk Score'];
+    const data = filteredAlerts.map(a => [
+      format(new Date(a.timestamp), 'yyyy-MM-dd HH:mm:ss'),
+      a.source_ip,
+      a.destination_ip,
+      a.alert_type || 'Unknown',
+      a.severity,
+      a.risk_score
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...data.map(row => row.join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `vanguard-alerts-${exportPeriod}-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleRowClick = (alert) => {
     setSelectedAlert(alert);
     setIsDrawerOpen(true);
@@ -133,7 +161,19 @@ function AlertsIncidents() {
             <p className="text-gray-500 text-sm mt-1">Context-driven investigation and response console</p>
           </div>
           <div className="flex items-center gap-3">
-            <button className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-all text-sm font-medium">
+            <select
+              value={exportPeriod}
+              onChange={(e) => setExportPeriod(e.target.value)}
+              className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+            >
+              <option value="24h">Last 24 Hours</option>
+              <option value="7d">Last 7 Days</option>
+              <option value="30d">Last 30 Days</option>
+            </select>
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-all text-sm font-medium shadow-sm active:scale-95"
+            >
               <FileText className="w-4 h-4" />
               Export Report
             </button>

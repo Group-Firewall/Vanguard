@@ -103,8 +103,8 @@ function AttackIntelligence() {
       )
 
       // Zero-day statistics
-      const zeroDayAlerts = allAlerts.filter(a => 
-        a.alert_type?.toLowerCase().includes('zero') || 
+      const zeroDayAlerts = allAlerts.filter(a =>
+        a.alert_type?.toLowerCase().includes('zero') ||
         a.alert_type?.toLowerCase().includes('unknown') ||
         (!a.signature_match && a.ml_prediction)
       )
@@ -131,8 +131,8 @@ function AttackIntelligence() {
         <h1 className="text-3xl font-bold mb-6">Attack Intelligence</h1>
 
         {/* Threat Trends */}
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h2 className="text-xl font-bold mb-4">Threat Trends Over Time (Last 24 Hours)</h2>
+        <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6 mb-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Threat Trends Over Time (Last 24 Hours)</h2>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={threatTrends}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -147,40 +147,40 @@ function AttackIntelligence() {
         </div>
 
         {/* Zero-Day Analysis */}
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h2 className="text-xl font-bold mb-4">Zero-Day Analysis</h2>
+        <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6 mb-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Zero-Day Analysis</h2>
           <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="text-center p-4 bg-blue-50 rounded">
+            <div className="text-center p-4 bg-blue-50 rounded-xl border border-blue-100">
               <div className="text-3xl font-bold text-blue-600">{zeroDayStats.detected}</div>
-              <div className="text-sm text-gray-600 mt-1">Zero-Day Detections</div>
+              <div className="text-sm text-blue-500 font-semibold uppercase mt-1">Zero-Day Detections</div>
             </div>
-            <div className="text-center p-4 bg-yellow-50 rounded">
+            <div className="text-center p-4 bg-yellow-50 rounded-xl border border-yellow-100">
               <div className="text-3xl font-bold text-yellow-600">{zeroDayStats.falsePositives}</div>
-              <div className="text-sm text-gray-600 mt-1">False Positives</div>
+              <div className="text-sm text-yellow-600 font-semibold uppercase mt-1">False Positives</div>
             </div>
-            <div className="text-center p-4 bg-green-50 rounded">
+            <div className="text-center p-4 bg-green-50 rounded-xl border border-green-100">
               <div className="text-3xl font-bold text-green-600">{zeroDayStats.accuracy}%</div>
-              <div className="text-sm text-gray-600 mt-1">Detection Accuracy</div>
+              <div className="text-sm text-green-600 font-semibold uppercase mt-1">Detection Accuracy</div>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="border rounded p-4">
-              <h3 className="font-semibold mb-2">Known-Only Traffic</h3>
+            <div className="border border-gray-100 bg-gray-50 rounded-xl p-4 transition-all hover:bg-white hover:shadow-sm">
+              <h3 className="font-bold text-gray-900 mb-2">Known-Only Traffic</h3>
               <div className="text-sm text-gray-600">
                 <div>Detected: {alerts.filter(a => a.signature_match).length}</div>
                 <div>Accuracy: 95.2%</div>
               </div>
             </div>
-            <div className="border rounded p-4">
-              <h3 className="font-semibold mb-2">Novel-Only Traffic</h3>
+            <div className="border border-gray-100 bg-gray-50 rounded-xl p-4 transition-all hover:bg-white hover:shadow-sm">
+              <h3 className="font-bold text-gray-900 mb-2">Novel-Only Traffic</h3>
               <div className="text-sm text-gray-600">
                 <div>Detected: {zeroDayStats.detected}</div>
                 <div>Accuracy: {zeroDayStats.accuracy}%</div>
               </div>
             </div>
-            <div className="border rounded p-4">
-              <h3 className="font-semibold mb-2">Mixed Live Traffic</h3>
+            <div className="border border-gray-100 bg-gray-50 rounded-xl p-4 transition-all hover:bg-white hover:shadow-sm">
+              <h3 className="font-bold text-gray-900 mb-2">Mixed Live Traffic</h3>
               <div className="text-sm text-gray-600">
                 <div>Total: {alerts.length}</div>
                 <div>Accuracy: 92.8%</div>
@@ -191,8 +191,8 @@ function AttackIntelligence() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {/* Top Attack Types */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-bold mb-4">Top Attack Types</h2>
+          <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Top Attack Types</h2>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={attackTypeChartData}>
                 <CartesianGrid strokeDasharray="3 3" />
@@ -205,8 +205,8 @@ function AttackIntelligence() {
           </div>
 
           {/* Attack Types Pie Chart */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-bold mb-4">Attack Type Distribution</h2>
+          <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Attack Type Distribution</h2>
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
@@ -230,8 +230,8 @@ function AttackIntelligence() {
         </div>
 
         {/* Top Attacker IPs */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-bold mb-4">Top Attacker IPs</h2>
+        <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Top Attacker IPs</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {topAttackers.map((attacker, index) => (
               <div key={attacker.ip} className="flex items-center justify-between p-4 bg-gray-50 rounded">
@@ -249,8 +249,8 @@ function AttackIntelligence() {
         </div>
 
         {/* Detection Improvement Over Time */}
-        <div className="bg-white rounded-lg shadow p-6 mt-6">
-          <h2 className="text-xl font-bold mb-4">Detection Improvement Over Time</h2>
+        <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6 mt-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Detection Improvement Over Time</h2>
           <div className="grid grid-cols-3 gap-4">
             <div className="text-center p-4 border rounded">
               <div className="text-2xl font-bold text-green-600">+5.2%</div>

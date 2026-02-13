@@ -6,7 +6,7 @@ const SidebarContext = createContext()
 export const useSidebar = () => {
   const context = useContext(SidebarContext)
   if (!context) {
-    return { isOpen: true, setIsOpen: () => {} }
+    return { isOpen: true, setIsOpen: () => { } }
   }
   return context
 }
@@ -15,7 +15,7 @@ function Sidebar() {
   const navigate = useNavigate()
   const location = useLocation()
   const [isOpen, setIsOpen] = useState(true)
-  
+
   // Expose sidebar state to parent
   React.useEffect(() => {
     const event = new CustomEvent('sidebar-toggle', { detail: { isOpen } })
@@ -27,7 +27,7 @@ function Sidebar() {
       id: 'dashboard',
       label: 'Dashboard',
       icon: '🏠',
-      path: '/',
+      path: '/dashboard',
       description: 'Real-Time Network Status Overview'
     },
     {
@@ -103,11 +103,10 @@ function Sidebar() {
           <button
             key={item.id}
             onClick={() => navigate(item.path)}
-            className={`w-full flex items-center px-4 py-3 transition-all duration-200 ${
-              isActive(item.path)
+            className={`w-full flex items-center px-4 py-3 transition-all duration-200 ${isActive(item.path)
                 ? 'bg-blue-600 border-l-4 border-blue-400'
                 : 'hover:bg-gray-800 border-l-4 border-transparent'
-            }`}
+              }`}
             title={!isOpen ? item.label : ''}
           >
             <span className="text-2xl mr-3">{item.icon}</span>
