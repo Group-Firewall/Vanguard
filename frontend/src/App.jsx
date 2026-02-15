@@ -4,7 +4,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 
 
 import Dashboard from './components/Dashboard'
-import './styles/index.css' 
+import './styles/index.css'
 
 import Sidebar from './components/Sidebar'
 import DashboardHome from './pages/DashboardHome'
@@ -36,7 +36,7 @@ function App() {
   // Routes
   return (
     <AuthProvider>
-      <Router>
+      <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Routes>
           {/* Default Route */}
           <Route path="/" element={<Navigate to="/login" replace />} />
