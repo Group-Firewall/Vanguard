@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Any, Union, Optional
 from jose import jwt, JWTError
-from passlib.context import CryptContext
+import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
@@ -9,8 +9,6 @@ from app.config import settings
 from app.database import get_db
 from app import models, schemas
 
-pwd_context = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")
-# bcrypt_sha256 hashes with sha256 before bcrypt, avoiding the 72 char limit.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login/access-token")
 
 
@@ -29,11 +27,13 @@ def create_access_token(
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
 
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    # Truncate to 72 bytes as required by bcrypt
+    password_bytes = password.encode('utf-8')[:72]
+    return bcrypt.hashpw(password_bytes, bcrypt.gensalt()).decode('utf-8')
 
 
 def get_current_user(
