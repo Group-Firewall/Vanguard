@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { Shield } from 'lucide-react';
 
 const Login = () => {
-    const [username, setUsername] = useState('');
-    const [password, setPassword] = useState('');
-    const [error, setError] = useState('');
-    const [loading, setLoading] = useState(false);
+    const [username, setUsername] = React.useState('');
+    const [password, setPassword] = React.useState('');
+    const [error, setError] = React.useState('');
+    const [success, setSuccess] = React.useState('');
+    const [loading, setLoading] = React.useState(false);
     const { login, user, loading: authLoading } = useAuth();
     const navigate = useNavigate();
 
@@ -22,8 +24,9 @@ const Login = () => {
         setError('');
         setLoading(true);
         try {
-            await login(username, password);
-            navigate('/dashboard');
+            await login(username.trim(), password);
+            setSuccess('Login successful! Redirecting...');
+            setTimeout(() => navigate('/dashboard'), 1000);
         } catch (err) {
             setError(err.response?.data?.detail || 'Failed to login');
         } finally {
@@ -34,9 +37,12 @@ const Login = () => {
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
             <div className="max-w-md w-full space-y-8 bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-700">
-                <div>
-                    <h2 className="mt-6 text-center text-3xl font-extrabold text-white">
-                        Vanguard NIDS
+                <div className="flex flex-col items-center">
+                    <div className="bg-blue-600 p-3 rounded-2xl shadow-lg shadow-blue-500/20 mb-4">
+                        <Shield className="w-8 h-8 text-white" />
+                    </div>
+                    <h2 className="text-center text-3xl font-extrabold text-white tracking-tight">
+                        Vanguard
                     </h2>
                     <p className="mt-2 text-center text-sm text-gray-400">
                         Sign in to your administrator account
@@ -48,6 +54,11 @@ const Login = () => {
                             {error}
                         </div>
                     )}
+                    {success && (
+                        <div className="bg-green-500/10 border border-green-500 text-green-500 px-4 py-2 rounded text-sm">
+                            {success}
+                        </div>
+                    )}
                     <div className="rounded-md shadow-sm -space-y-px">
                         <div>
                             <input
@@ -56,7 +67,7 @@ const Login = () => {
                                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-600 placeholder-gray-500 text-white rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm bg-gray-700"
                                 placeholder="Username"
                                 value={username}
-                                onChange={(e) => setUsername(e.target.value.trim())}
+                                onChange={(e) => setUsername(e.target.value)}
                             />
                         </div>
                         <div>
@@ -66,7 +77,7 @@ const Login = () => {
                                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-600 placeholder-gray-500 text-white rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm bg-gray-700"
                                 placeholder="Password"
                                 value={password}
-                                onChange={(e) => setPassword(e.target.value.trim())}
+                                onChange={(e) => setPassword(e.target.value)}
                             />
                         </div>
                     </div>

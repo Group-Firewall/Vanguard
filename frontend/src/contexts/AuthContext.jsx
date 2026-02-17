@@ -1,13 +1,13 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext } from 'react';
 import api from '../services/api';
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-    const [user, setUser] = useState(null);
-    const [loading, setLoading] = useState(true);
+    const [user, setUser] = React.useState(null);
+    const [loading, setLoading] = React.useState(true);
 
-    useEffect(() => {
+    React.useEffect(() => {
         const token = localStorage.getItem('token');
         if (token) {
             fetchCurrentUser();
@@ -21,6 +21,7 @@ export const AuthProvider = ({ children }) => {
             const response = await api.get('/auth/me');
             setUser(response.data);
         } catch (error) {
+            console.error('Failed to fetch current user:', error.response?.data?.detail || error.message);
             localStorage.removeItem('token');
             setUser(null);
         } finally {
@@ -29,19 +30,23 @@ export const AuthProvider = ({ children }) => {
     };
 
     const login = async (username, password) => {
-        const params = new URLSearchParams();
-        params.append('username', username.trim());
-        params.append('password', password.trim());
+        const formData = new FormData();
+        formData.append('username', username);
+        formData.append('password', password);
 
-        const response = await api.post('/auth/login/access-token', params, {
+        const response = await api.post('/auth/login/access-token', formData, {
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
             },
         });
 
-        const { access_token } = response.data;
+        const { access_token, user: userData } = response.data;
         localStorage.setItem('token', access_token);
-        await fetchCurrentUser();
+        if (userData) {
+            setUser(userData);
+        } else {
+            await fetchCurrentUser();
+        }
         return response.data;
     };
 
