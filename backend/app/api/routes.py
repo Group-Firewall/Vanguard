@@ -385,3 +385,58 @@ async def create_test_data_endpoint(db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error creating test data: {str(e)}")
+
+
+# Settings Endpoints
+@router.get("/settings", response_model=Dict[str, Any])
+async def get_settings(db: Session = Depends(get_db)):
+    """Get all system settings"""
+    settings = db.query(models.Setting).all()
+    return {s.key: s.value for s in settings}
+
+
+@router.post("/settings")
+async def update_settings(
+    settings_in: schemas.SettingsUpdate,
+    db: Session = Depends(get_db)
+):
+    """Update multiple system settings"""
+    for key, value in settings_in.settings.items():
+        db_setting = db.query(models.Setting).filter(models.Setting.key == key).first()
+        if db_setting:
+            db_setting.value = str(value)
+        else:
+            # Determine category based on key prefix or similar
+            category = "system"
+            if "alert" in key.lower(): category = "alerts"
+            if "engine" in key.lower() or "detection" in key.lower(): category = "engine"
+            
+            db_setting = models.Setting(
+                key=key,
+                value=str(value),
+                category=category
+            )
+            db.add(db_setting)
+    
+    db.commit()
+    return {"message": "Settings updated successfully"}
+
+
+@router.post("/firewall/block-ip")
+async def block_ip_action(ip: str, db: Session = Depends(get_db)):
+    """Mock implementation of blocking an IP"""
+    # In a real scenario, this would interact with iptables/nftables
+    print(f"Blocking IP: {ip}")
+    return {"message": f"IP {ip} has been blocked"}
+
+
+@router.post("/alerts/{alert_id}/escalate")
+async def escalate_alert(alert_id: int, db: Session = Depends(get_db)):
+    """Escalate an alert to High severity"""
+    alert = db.query(models.Alert).filter(models.Alert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    
+    alert.severity = "high"
+    db.commit()
+    return {"message": "Alert escalated to High severity"}

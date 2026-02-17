@@ -187,6 +187,12 @@ class UserCreate(UserBase):
     """User creation schema"""
     password: str
 
+class UserUpdate(BaseModel):
+    """User update schema"""
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    password: Optional[str] = None
+
 
 class User(UserBase):
     """User response schema"""
@@ -208,3 +214,16 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     """Token payload data schema"""
     username: Optional[str] = None
+
+class SettingSchema(BaseModel):
+    """Setting schema"""
+    key: str
+    value: str
+    category: str
+
+    class Config:
+        from_attributes = True
+
+class SettingsUpdate(BaseModel):
+    """Multiple settings update"""
+    settings: Dict[str, Any]
