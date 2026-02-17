@@ -21,6 +21,15 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 )
 
+export const authAPI = {
+  updateMe: (data) => api.put('/auth/me', data),
+}
+
+export const settingsAPI = {
+  get: () => api.get('/settings'),
+  update: (settings) => api.post('/settings', { settings }),
+}
+
 export const captureAPI = {
   start: (interface_name = null, filter = null) =>
     api.post('/capture/start', { interface: interface_name, filter }),

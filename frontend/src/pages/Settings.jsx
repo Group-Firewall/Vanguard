@@ -19,7 +19,7 @@ import {
   RotateCcw
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { testDataAPI } from '../services/api'
+import { testDataAPI, settingsAPI, authAPI } from '../services/api'
 
 function Settings() {
   const { user } = useAuth()
@@ -63,15 +63,84 @@ function Settings() {
 
   const [lastSaved, setLastSaved] = useState(null)
 
-  const handleSave = () => {
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const response = await settingsAPI.get();
+        const data = response.data;
+
+        if (data) {
+          setPreferences(prev => ({
+            ...prev,
+            darkMode: data.darkMode === 'true',
+            refreshSpeed: data.refreshSpeed || prev.refreshSpeed,
+            timeRange: data.timeRange || prev.timeRange,
+            soundAlerts: data.soundAlerts === 'true'
+          }));
+
+          setAlertSettings(prev => ({
+            ...prev,
+            enableEmail: data.enableEmail === 'true',
+            severityThreshold: data.severityThreshold || prev.severityThreshold,
+            autoIncident: data.autoIncident === 'true',
+            grouping: data.grouping === 'true'
+          }));
+
+          setDetectionSettings(prev => ({
+            ...prev,
+            sensitivity: data.sensitivity || prev.sensitivity,
+            payloadThreshold: parseInt(data.payloadThreshold) || prev.payloadThreshold,
+            scanDetection: data.scanDetection === 'true'
+          }));
+        }
+      } catch (error) {
+        console.error('Error fetching settings:', error);
+      }
+    };
+
+    fetchSettings();
+  }, []);
+
+  const handleSave = async () => {
     setIsSaving(true)
-    // Simulate API call
-    setTimeout(() => {
-      setIsSaving(false)
+    setSaveStatus(null)
+
+    try {
+      // 1. Update Profile if needed
+      if (profile.fullName !== user?.full_name || profile.email !== user?.email || profile.password) {
+        const profileData = {
+          full_name: profile.fullName,
+          email: profile.email
+        };
+        if (profile.password) {
+          if (profile.password !== profile.confirmPassword) {
+            alert("Passwords do not match!");
+            setIsSaving(false);
+            return;
+          }
+          profileData.password = profile.password;
+        }
+        await authAPI.updateMe(profileData);
+      }
+
+      // 2. Update System Settings
+      const allSettings = {
+        ...preferences,
+        ...alertSettings,
+        ...detectionSettings
+      };
+
+      await settingsAPI.update(allSettings);
+
       setSaveStatus('success')
       setLastSaved(new Date().toLocaleTimeString())
       setTimeout(() => setSaveStatus(null), 3000)
-    }, 1000)
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      alert('Failed to save settings: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const handleRestartServices = () => {
@@ -140,8 +209,8 @@ function Settings() {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === tab.id
-                    ? 'bg-white text-blue-600 shadow-sm border border-slate-200'
-                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                  ? 'bg-white text-blue-600 shadow-sm border border-slate-200'
+                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
                   }`}
               >
                 {tab.icon}
@@ -195,6 +264,8 @@ function Settings() {
                           <input
                             type="password"
                             placeholder="Enter new password"
+                            value={profile.password}
+                            onChange={(e) => setProfile({ ...profile, password: e.target.value })}
                             className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                           />
                         </div>
@@ -203,6 +274,8 @@ function Settings() {
                           <input
                             type="password"
                             placeholder="Verify password"
+                            value={profile.confirmPassword}
+                            onChange={(e) => setProfile({ ...profile, confirmPassword: e.target.value })}
                             className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                           />
                         </div>
@@ -347,7 +420,7 @@ function Settings() {
                           <div className="flex justify-between items-center mb-1">
                             <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Intrusion Sensitivity Level</label>
                             <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${detectionSettings.sensitivity === 'Aggressive' ? 'bg-red-50 text-red-600' :
-                                detectionSettings.sensitivity === 'Balanced' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'
+                              detectionSettings.sensitivity === 'Balanced' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'
                               }`}>{detectionSettings.sensitivity}</span>
                           </div>
                           <div className="flex gap-2">
@@ -356,8 +429,8 @@ function Settings() {
                                 key={level}
                                 onClick={() => setDetectionSettings({ ...detectionSettings, sensitivity: level })}
                                 className={`flex-1 py-4 px-2 rounded-2xl border-2 transition-all font-bold text-xs ${detectionSettings.sensitivity === level
-                                    ? 'border-blue-600 bg-blue-50 text-blue-600 shadow-sm'
-                                    : 'border-slate-100 bg-slate-50 text-slate-400 hover:border-slate-200'
+                                  ? 'border-blue-600 bg-blue-50 text-blue-600 shadow-sm'
+                                  : 'border-slate-100 bg-slate-50 text-slate-400 hover:border-slate-200'
                                   }`}
                               >
                                 {level}

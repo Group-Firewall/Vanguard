@@ -90,3 +90,13 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=False)
     created_at = Column(DateTime, default=func.now())
+
+class Setting(Base):
+    """System settings and configuration"""
+    __tablename__ = "settings"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(100), unique=True, index=True)
+    value = Column(Text)
+    category = Column(String(50), index=True)  # system, alerts, engine
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())

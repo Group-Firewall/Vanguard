@@ -75,3 +75,34 @@ def read_user_me(
     Get current user.
     """
     return current_user
+
+
+@router.put("/me", response_model=schemas.User)
+def update_user_me(
+    *,
+    db: Session = Depends(get_db),
+    user_in: schemas.UserUpdate,
+    current_user: models.User = Depends(security.get_current_user),
+) -> Any:
+    """
+    Update own user profile.
+    """
+    if user_in.email:
+        existing_user = db.query(models.User).filter(models.User.email == user_in.email).first()
+        if existing_user and existing_user.id != current_user.id:
+            raise HTTPException(
+                status_code=400,
+                detail="User with this email already exists."
+            )
+        current_user.email = user_in.email
+    
+    if user_in.full_name:
+        current_user.full_name = user_in.full_name
+        
+    if user_in.password:
+        current_user.hashed_password = security.get_password_hash(user_in.password)
+        
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+    return current_user

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { alertsAPI } from '../services/api'
+import api, { alertsAPI } from '../services/api'
 import { format } from 'date-fns'
 import {
   Shield,
@@ -128,6 +128,47 @@ function AlertsIncidents() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleBlockIP = async (ip) => {
+    if (window.confirm(`Are you sure you want to block IP: ${ip}?`)) {
+      try {
+        await api.post('/firewall/block-ip', { ip });
+        alert(`IP ${ip} has been blocked successfully.`);
+      } catch (error) {
+        console.error('Error blocking IP:', error);
+        alert('Failed to block IP.');
+      }
+    }
+  };
+
+  const handleResolve = async (id) => {
+    try {
+      await alertsAPI.resolve(id);
+      loadAlerts();
+      alert('Alert marked as resolved.');
+    } catch (error) {
+      console.error('Error resolving alert:', error);
+      alert('Failed to resolve alert.');
+    }
+  };
+
+  const handleEscalate = async (id) => {
+    try {
+      await api.post(`/alerts/${id}/escalate`);
+      loadAlerts();
+      alert('Alert escalated to High severity.');
+    } catch (error) {
+      console.error('Error escalating alert:', error);
+      alert('Failed to escalate alert.');
+    }
+  };
+
+  const handleIgnore = (id) => {
+    if (window.confirm('Mark this alert as False Positive and ignore?')) {
+      alert('Alert ignored.');
+      // Optionally implementation for ignoring
+    }
   };
 
   const handleRowClick = (alert) => {
@@ -290,7 +331,7 @@ function AlertsIncidents() {
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Scan Type</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Source IP</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Destination</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Payload</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Payload size</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Severity</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Timestamp</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Action</th>
@@ -315,7 +356,9 @@ function AlertsIncidents() {
                     )}
                   </td>
                   <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                    {alert.scan_type || 'Unknown'}
+                    {alert.scan_type === 'Normal' ? 'Normal attack' :
+                      alert.scan_type === 'Bot' ? 'BotAttack' :
+                        alert.scan_type === 'Port_Scan' ? 'Port Scan' : 'Other Attack'}
                   </td>
                   <td className="px-6 py-4 font-mono text-sm text-blue-600">
                     {alert.source_ip}
@@ -327,7 +370,7 @@ function AlertsIncidents() {
                     </div>
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-600">
-                    {(alert.payload_size / 1024).toFixed(1)} KB
+                    {alert.payload_size?.toLocaleString() || '0'} Bytes
                   </td>
                   <td className="px-6 py-4">
                     {getSeverityBadge(alert.severity)}
@@ -341,16 +384,28 @@ function AlertsIncidents() {
                         Mitigate <ChevronDown className="w-3 h-3" />
                       </button>
                       <div className="absolute right-0 mt-1 w-40 bg-white border border-slate-200 rounded-xl shadow-xl py-1 hidden group-hover/menu:block z-20 animate-in fade-in slide-in-from-top-1 duration-150">
-                        <button className="w-full text-left px-4 py-2 text-[10px] font-bold text-slate-700 hover:bg-red-50 hover:text-red-600 uppercase flex items-center gap-2">
+                        <button
+                          onClick={() => handleBlockIP(alert.source_ip)}
+                          className="w-full text-left px-4 py-2 text-[10px] font-bold text-slate-700 hover:bg-red-50 hover:text-red-600 uppercase flex items-center gap-2"
+                        >
                           <Lock className="w-3 h-3" /> Block IP
                         </button>
-                        <button className="w-full text-left px-4 py-2 text-[10px] font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-600 uppercase flex items-center gap-2">
+                        <button
+                          onClick={() => handleResolve(alert.id)}
+                          className="w-full text-left px-4 py-2 text-[10px] font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-600 uppercase flex items-center gap-2"
+                        >
                           <CheckCircle className="w-3 h-3" /> Mark Resolved
                         </button>
-                        <button className="w-full text-left px-4 py-2 text-[10px] font-bold text-slate-700 hover:bg-orange-50 hover:text-orange-600 uppercase flex items-center gap-2">
+                        <button
+                          onClick={() => handleEscalate(alert.id)}
+                          className="w-full text-left px-4 py-2 text-[10px] font-bold text-slate-700 hover:bg-orange-50 hover:text-orange-600 uppercase flex items-center gap-2"
+                        >
                           <ExternalLink className="w-3 h-3" /> Escalate
                         </button>
-                        <button className="w-full text-left px-4 py-2 text-[10px] font-bold text-slate-700 hover:bg-slate-50 hover:text-slate-400 uppercase flex items-center gap-2">
+                        <button
+                          onClick={() => handleIgnore(alert.id)}
+                          className="w-full text-left px-4 py-2 text-[10px] font-bold text-slate-700 hover:bg-slate-50 hover:text-slate-400 uppercase flex items-center gap-2"
+                        >
                           <X className="w-3 h-3" /> Ignore / FP
                         </button>
                       </div>

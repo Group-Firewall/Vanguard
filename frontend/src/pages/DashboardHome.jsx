@@ -157,11 +157,6 @@ function DashboardHome() {
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Enterprise Security</p>
               </div>
             </div>
-            {/* Quick Navigation Search */}
-            <div className="hidden md:flex items-center bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 w-64">
-              <Search className="w-4 h-4 text-slate-400" />
-              <input type="text" placeholder="Search incidents..." className="bg-transparent border-none text-xs outline-none px-2 w-full" />
-            </div>
           </div>
 
           <div className="flex items-center gap-6">
