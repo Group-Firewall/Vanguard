@@ -124,8 +124,8 @@ function Sidebar() {
       {isOpen && (
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-700 bg-gray-800">
           <div className="text-xs text-gray-400">
-            <div>Version 1.0.0</div>
-            <div className="mt-1">© 2024 Vanguard</div>
+            <div>Version 2.0.0</div>
+            <div className="mt-1">© 2026 Vanguard</div>
           </div>
         </div>
       )}
