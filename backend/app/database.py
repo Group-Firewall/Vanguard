@@ -59,7 +59,10 @@ def get_db():
 
 def init_db():
     """Initialize database tables"""
-    from app.models import Alert, Packet, Metric, ModelPerformance
+    # Import all models so that SQLAlchemy is aware of them when creating tables.
+    # Even if not referenced directly here, importing app.models registers
+    # classes like User and Setting with the shared Base metadata.
+    from app import models  # noqa: F401
     Base.metadata.create_all(bind=engine)
     print(f"Database initialized successfully! (Using: {database_url.split('@')[-1] if '@' in database_url else database_url})")
 

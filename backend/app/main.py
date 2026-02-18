@@ -60,6 +60,11 @@ async def shutdown_event():
     print("Shutting down Vanguard NIDS...")
 
 
+@app.get("/api/test-debug")
+async def test_debug():
+    return {"status": "ok", "message": "Backend is reachable"}
+
+
 @app.get("/")
 async def root():
     """Root endpoint"""

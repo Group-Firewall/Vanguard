@@ -1,7 +1,7 @@
 """API routes for Vanguard NIDS"""
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 import asyncio
 
@@ -12,6 +12,7 @@ from app.services.detection_engine import DetectionEngine
 from app.services.alert_manager import AlertManager
 from app.services.model_service import ModelService
 from app.services.report_service import generate_capture_report
+from app import schemas, models
 from app.models import Alert, Metric, ModelPerformance
 from app.workers.background_tasks import (
     start_background_processing,
