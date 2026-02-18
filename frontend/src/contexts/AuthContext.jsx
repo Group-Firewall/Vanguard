@@ -30,7 +30,10 @@ export const AuthProvider = ({ children }) => {
     };
 
     const login = async (username, password) => {
-        const formData = new FormData();
+        // Use URLSearchParams so the payload is encoded exactly as
+        // application/x-www-form-urlencoded, which FastAPI's
+        // OAuth2PasswordRequestForm expects.
+        const formData = new URLSearchParams();
         formData.append('username', username);
         formData.append('password', password);
 
