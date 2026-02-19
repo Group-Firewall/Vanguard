@@ -11,7 +11,7 @@ from app.config import settings
 from app.api import routes, websocket
 from app.database import init_db
 
-# Create FastAPI app
+# The Creation FastAPI app
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.VERSION,
