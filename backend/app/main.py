@@ -2,7 +2,7 @@
 import sys
 import os
 
-# Add project root to sys.path preventing ImportErrors
+# Adding project root to sys.path preventing ImportErrors
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI
