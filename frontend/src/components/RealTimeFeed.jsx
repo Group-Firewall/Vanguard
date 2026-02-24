@@ -1,293 +1,260 @@
-import React, { useState, useEffect } from 'react'
-import { format } from 'date-fns'
-import { alertsAPI } from '../services/api'
-import {
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from 'recharts'
+/**
+ * RealTimeFeed — intrusion alert stream.
+ *
+ * Subscribes to /ws/alerts for ML-classified threats only.
+ * Falls back to REST polling when the WebSocket is not yet connected.
+ *
+ * Data shape (from pipeline → /ws/alerts):
+ * {
+ *   type: "alert",
+ *   data: {
+ *     id, timestamp, severity, alert_type,
+ *     source_ip, destination_ip, protocol,
+ *     description, threat_score
+ *   }
+ * }
+ */
 
-function RealTimeFeed() {
-  const [alerts, setAlerts] = useState([])
-  const [ws, setWs] = useState(null)
-  const [stats, setStats] = useState({ severity: {}, alertType: {} })
+import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { alertsAPI } from '../services/api'
+import useWebSocket from '../hooks/useWebSocket'
+import { AlertTriangle, Zap, Shield, Clock, WifiOff } from 'lucide-react'
+
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+
+const MAX_ALERTS = 50
+const FALLBACK_POLL_INTERVAL_MS = 5_000
+
+// ---------------------------------------------------------------------------
+// Severity configuration
+// ---------------------------------------------------------------------------
+
+const SEVERITY_STYLES = {
+  critical: {
+    badge: 'bg-red-600 text-white',
+    row: 'border-l-4 border-red-500 bg-red-50/30',
+    icon: Zap,
+  },
+  high: {
+    badge: 'bg-orange-500 text-white',
+    row: 'border-l-4 border-orange-400 bg-orange-50/20',
+    icon: AlertTriangle,
+  },
+  medium: {
+    badge: 'bg-yellow-500 text-white',
+    row: 'border-l-4 border-yellow-400 bg-yellow-50/10',
+    icon: AlertTriangle,
+  },
+  low: {
+    badge: 'bg-blue-500 text-white',
+    row: 'border-l-4 border-blue-300 bg-blue-50/10',
+    icon: Shield,
+  },
+}
+
+function severityStyle(severity = 'low') {
+  return SEVERITY_STYLES[severity.toLowerCase()] ?? SEVERITY_STYLES.low
+}
+
+// ---------------------------------------------------------------------------
+// Fallback REST polling (used when WS is not yet open)
+// ---------------------------------------------------------------------------
+
+function useFallbackPolling(enabled, onAlerts) {
+  const timerRef = useRef(null)
 
   useEffect(() => {
-    // Load initial alerts from API
-    loadAlerts()
-
-    // Try to connect to WebSocket (with error handling)
-    let websocket = null
-    try {
-      websocket = new WebSocket('ws://localhost:8000/ws/alerts')
-
-      websocket.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data)
-          if (data.type === 'alert') {
-            setAlerts((prev) => [data.data, ...prev].slice(0, 50)) // Keep last 50
-            updateStats(data.data)
-          }
-        } catch (error) {
-          console.error('Error parsing WebSocket message:', error)
-        }
-      }
-
-      websocket.onerror = (error) => {
-        console.error('WebSocket error:', error)
-        // Fallback to polling
-      }
-
-      websocket.onopen = () => {
-        console.log('WebSocket connected')
-      }
-
-      websocket.onclose = () => {
-        console.log('WebSocket disconnected, using polling fallback')
-      }
-
-      setWs(websocket)
-    } catch (error) {
-      console.error('Failed to create WebSocket:', error)
+    if (!enabled) {
+      clearInterval(timerRef.current)
+      return
     }
 
-    // Polling fallback every 5 seconds (always active)
-    const pollInterval = setInterval(loadAlerts, 5000)
-
-    return () => {
-      if (websocket) {
-        websocket.close()
+    const poll = async () => {
+      try {
+        const res = await alertsAPI.getAll({ limit: MAX_ALERTS })
+        onAlerts(res.data ?? [])
+      } catch {
+        // Silently ignore polling errors
       }
-      clearInterval(pollInterval)
     }
-  }, [])
 
-  const loadAlerts = async () => {
-    try {
-      const response = await alertsAPI.getAll({ limit: 50, resolved: false })
-      if (response.data && Array.isArray(response.data) && response.data.length > 0) {
-        setAlerts(response.data.slice(0, 50))
-        updateStatsFromAlerts(response.data)
-      } else {
-        // If no alerts, try to get all alerts (including resolved) for demo
-        const allResponse = await alertsAPI.getAll({ limit: 20 })
-        if (allResponse.data && Array.isArray(allResponse.data) && allResponse.data.length > 0) {
-          setAlerts(allResponse.data.slice(0, 20))
-          updateStatsFromAlerts(allResponse.data)
-        }
-      }
-    } catch (error) {
-      console.error('Error loading alerts:', error)
-      // Keep existing alerts on error
-    }
-  }
+    // Poll immediately, then on interval
+    poll()
+    timerRef.current = setInterval(poll, FALLBACK_POLL_INTERVAL_MS)
 
-  const updateStats = (alert) => {
-    setStats(prev => {
-      const newStats = { ...prev }
-      const severity = alert.severity || 'unknown'
-      const alertType = alert.alert_type || 'unknown'
+    return () => clearInterval(timerRef.current)
+  }, [enabled, onAlerts])
+}
 
-      newStats.severity[severity] = (newStats.severity[severity] || 0) + 1
-      newStats.alertType[alertType] = (newStats.alertType[alertType] || 0) + 1
+// ---------------------------------------------------------------------------
+// Alert row component
+// ---------------------------------------------------------------------------
 
-      return newStats
-    })
-  }
-
-  const updateStatsFromAlerts = (alerts) => {
-    const severityCount = {}
-    const alertTypeCount = {}
-
-    alerts.forEach(alert => {
-      const severity = alert.severity || 'unknown'
-      const alertType = alert.alert_type || 'unknown'
-      severityCount[severity] = (severityCount[severity] || 0) + 1
-      alertTypeCount[alertType] = (alertTypeCount[alertType] || 0) + 1
-    })
-
-    setStats({ severity: severityCount, alertType: alertTypeCount })
-  }
-
-  const getSeverityColor = (severity) => {
-    switch (severity?.toLowerCase()) {
-      case 'high':
-      case 'critical':
-        return 'bg-red-100 border-red-500 text-red-800'
-      case 'medium':
-        return 'bg-yellow-100 border-yellow-500 text-yellow-800'
-      case 'low':
-        return 'bg-green-100 border-green-500 text-green-800'
-      default:
-        return 'bg-gray-100 border-gray-500 text-gray-800'
-    }
-  }
-
-  // Prepare pie chart data
-  const severityData = Object.entries(stats.severity).map(([name, value]) => ({
-    name: name.toUpperCase(),
-    value
-  }))
-
-  const alertTypeData = Object.entries(stats.alertType).map(([name, value]) => ({
-    name: name.replace('_', ' ').toUpperCase(),
-    value
-  }))
-
-  const COLORS = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6']
-
-  // Time series data for attack trends
-  const timeSeriesData = alerts
-    .slice(0, 10)
-    .reverse()
-    .map((alert, index) => ({
-      time: alert.timestamp ? format(new Date(alert.timestamp), 'HH:mm') : `T${index}`,
-      score: (alert.threat_score || 0) * 100,
-      severity: alert.severity || 'low'
-    }))
+function AlertRow({ alert }) {
+  const style = severityStyle(alert.severity)
+  const Icon = style.icon
+  const ts = alert.timestamp ? new Date(alert.timestamp) : null
 
   return (
-    <div className="space-y-6">
-      {/* Real-Time Alerts Feed */}
-      <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold">Real-Time Attack Monitoring</h2>
-          <div className="flex items-center space-x-4">
-            <span className="text-sm text-gray-500">
-              {alerts.length} active alerts
-            </span>
-            <div className="flex items-center space-x-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-xs text-gray-500">Live</span>
+    <div className={`${style.row} px-5 py-3.5 hover:bg-gray-50/50 transition-colors group`}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <div className={`mt-0.5 p-1 rounded ${style.badge} opacity-90`}>
+            <Icon className="w-3 h-3" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${style.badge}`}>
+                {alert.severity?.toUpperCase()}
+              </span>
+              <span className="text-xs font-bold text-gray-900">{alert.alert_type}</span>
+              {alert.protocol && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
+                  {alert.protocol}
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">{alert.description}</p>
+            <div className="flex items-center gap-3 mt-1.5 text-[10px] text-gray-400">
+              <span className="font-mono font-medium">
+                {alert.source_ip} → {alert.destination_ip}
+              </span>
+              {typeof alert.threat_score === 'number' && (
+                <span className="font-bold text-red-500">
+                  Score {(alert.threat_score * 100).toFixed(0)}%
+                </span>
+              )}
             </div>
           </div>
         </div>
-        <div className="space-y-2 max-h-64 overflow-y-auto">
-          {alerts.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-gray-500 mb-2">No alerts yet</p>
-              <p className="text-xs text-gray-400">Create test data to see real-time monitoring</p>
+
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          {ts && (
+            <div className="flex items-center gap-1 text-[10px] text-gray-400">
+              <Clock className="w-3 h-3" />
+              {ts.toLocaleTimeString()}
             </div>
-          ) : (
-            alerts.slice(0, 10).map((alert, index) => (
-              <div
-                key={alert.id || index}
-                className={`border-l-4 p-3 rounded transition-all hover:shadow-md ${getSeverityColor(alert.severity)}`}
-              >
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <p className="font-semibold text-sm">{alert.description || 'Alert'}</p>
-                    <p className="text-xs mt-1 text-gray-600">
-                      {alert.source_ip} → {alert.destination_ip} ({alert.protocol})
-                    </p>
-                    <div className="flex items-center space-x-3 mt-2 text-xs">
-                      <span className="text-gray-500">
-                        Score: <span className="font-semibold">{(alert.threat_score || 0).toFixed(2)}</span>
-                      </span>
-                      {alert.timestamp && (
-                        <span className="text-gray-400">
-                          {format(new Date(alert.timestamp), 'HH:mm:ss')}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="text-right ml-4">
-                    <span className="text-xs font-semibold px-2 py-1 rounded bg-opacity-20">
-                      {alert.severity?.toUpperCase()}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))
           )}
         </div>
       </div>
+    </div>
+  )
+}
 
-      {/* Attack Trends Line Chart */}
-      {timeSeriesData.length > 0 && (
-        <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6">
-          <h3 className="text-lg font-bold mb-4">Attack Score Trends</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={timeSeriesData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="time" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Line
-                type="monotone"
-                dataKey="score"
-                stroke="#ef4444"
-                strokeWidth={2}
-                name="Threat Score (%)"
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
 
-      {/* Severity Distribution Pie Chart */}
-      {severityData.length > 0 && (
-        <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6">
-          <h3 className="text-lg font-bold mb-4">Severity Distribution</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie
-                data={severityData}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                outerRadius={80}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {severityData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+function RealTimeFeed({ limit = MAX_ALERTS }) {
+  const [alerts, setAlerts] = useState([])
+  const [isPaused, setIsPaused] = useState(false)
+  const isPausedRef = useRef(false)
+  isPausedRef.current = isPaused
 
-      {/* Alert Type Distribution */}
-      {alertTypeData.length > 0 && (
-        <div className="bg-white shadow-sm border border-gray-200 rounded-2xl p-6">
-          <h3 className="text-lg font-bold mb-4">Attack Type Distribution</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie
-                data={alertTypeData}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                outerRadius={80}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {alertTypeData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
+  // ── WebSocket /ws/alerts ──
+
+  const handleAlertMessage = useCallback((message) => {
+    if (message.type !== 'alert') return
+    if (isPausedRef.current) return
+
+    setAlerts((prev) => {
+      // Deduplicate by id
+      const next = [message.data, ...prev.filter((a) => a.id !== message.data.id)]
+      return next.slice(0, limit)
+    })
+  }, [limit])
+
+  const { readyState } = useWebSocket('/ws/alerts', handleAlertMessage)
+  const wsOpen = readyState === WebSocket.OPEN
+
+  // ── Fallback polling (only when WS is not connected) ──
+
+  const handlePolledAlerts = useCallback((fetched) => {
+    setAlerts((prev) => {
+      const existingIds = new Set(prev.map((a) => a.id))
+      const newOnes = fetched.filter((a) => !existingIds.has(a.id))
+      return [...newOnes, ...prev].slice(0, limit)
+    })
+  }, [limit])
+
+  useFallbackPolling(!wsOpen, handlePolledAlerts)
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full">
+
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="bg-red-600 p-2 rounded-xl">
+            <AlertTriangle className="w-4 h-4 text-white" />
+          </div>
+          <div>
+            <h2 className="text-sm font-bold text-gray-900">Live Threat Feed</h2>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              {wsOpen ? (
+                <>
+                  <span className="flex h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                  <span className="text-[10px] text-gray-400 font-medium">
+                    WebSocket · /ws/alerts
+                  </span>
+                </>
+              ) : (
+                <>
+                  <WifiOff className="w-3 h-3 text-yellow-400" />
+                  <span className="text-[10px] text-gray-400 font-medium">
+                    REST Fallback — Reconnecting…
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
         </div>
-      )}
+
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-bold text-gray-400 uppercase">
+            {alerts.length} / {limit} alerts
+          </span>
+          <button
+            onClick={() => setIsPaused((p) => !p)}
+            className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-gray-600 hover:bg-gray-100 transition-all"
+          >
+            {isPaused ? '▶ Resume' : '⏸ Pause'}
+          </button>
+          <button
+            onClick={() => setAlerts([])}
+            className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100 transition-all"
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+
+      {/* Alert list */}
+      <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
+        {alerts.map((alert, i) => (
+          <AlertRow key={alert.id ?? i} alert={alert} />
+        ))}
+
+        {alerts.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-20 gap-3">
+            <Shield className="w-12 h-12 text-green-200" />
+            <p className="text-sm font-medium text-gray-400">No alerts detected</p>
+            <p className="text-xs text-gray-300">
+              {wsOpen
+                ? 'Monitoring /ws/alerts — ML pipeline active.'
+                : 'Waiting for WebSocket connection or REST data…'}
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
 export default RealTimeFeed
-

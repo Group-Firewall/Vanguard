@@ -1,13 +1,7 @@
-# Node dependencies
+# Node
 node_modules/
-frontend/node_modules/
-
-# Vite cache
-.vite/
 dist/
-
-# Logs
-npm-debug.log*
+.vite/
 
 # Python
 __pycache__/

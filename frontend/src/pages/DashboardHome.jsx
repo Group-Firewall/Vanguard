@@ -153,7 +153,7 @@ function DashboardHome() {
                 <Shield className="w-6 h-6 text-white" />
               </div>
               <div className="hidden sm:block">
-                <h1 className="text-xl font-bold tracking-tight">Vanguard SOC</h1>
+                <h1 className="text-xl font-bold tracking-tight">Vanguard</h1>
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Enterprise Security</p>
               </div>
             </div>

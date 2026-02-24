@@ -14,11 +14,7 @@ from app.services.model_service import ModelService
 from app.services.report_service import generate_capture_report
 from app import schemas, models
 from app.models import Alert, Metric, ModelPerformance
-from app.workers.background_tasks import (
-    start_background_processing,
-    stop_background_processing,
-    processor,
-)
+from app.workers.background_tasks import start_pipeline, stop_pipeline, get_pipeline
 
 router = APIRouter()
 
@@ -32,66 +28,82 @@ model_service = ModelService()
 @router.post("/capture/start", response_model=schemas.CaptureStatusResponse)
 async def start_capture(
     request: schemas.CaptureStartRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    """Start packet capture"""
+    """Start live packet capture and the ML processing pipeline.
+
+    The capture service enqueues packets into the in-memory stream;
+    the processing pipeline consumes them in batches for ML detection.
+    No DB writes happen during capture — only alerts are persisted.
+    """
     try:
         if capture_service.is_capturing:
             raise HTTPException(status_code=400, detail="Capture already in progress")
-        
-        interface = request.interface
-        filter_str = request.filter
-        
-        # Start capture in background
-        background_tasks.add_task(
-            capture_service.start_capture,
-            interface=interface,
-            filter_str=filter_str,
-            db=db
+
+        # Start packet capture (no DB session needed)
+        capture_service.start_capture(
+            interface=request.interface,
+            filter_str=request.filter,
         )
-        
-        # Ensure background processing (feature extraction + ML + alerts +
-        # metrics broadcasting) is running while capture is active.
-        if not processor.is_processing:
-            # Fire-and-forget task on the event loop
-            asyncio.create_task(start_background_processing())
-        
+
+        # Start the async batch processing pipeline
+        await start_pipeline()
+
         return schemas.CaptureStatusResponse(
             is_capturing=True,
             packets_captured=0,
             start_time=datetime.now(),
-            interface=interface
+            interface=capture_service.get_interface()
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.post("/capture/stop", response_model=schemas.CaptureStatusResponse)
 async def stop_capture(db: Session = Depends(get_db)):
-    """Stop packet capture"""
+    """Stop packet capture and the processing pipeline.
+
+    Saves an aggregate metrics record to DB for historical reporting,
+    then generates a capture report on disk.
+    """
     try:
         capture_service.stop_capture()
-        # Stop the background ML processing loop
-        stop_background_processing()
+        stop_pipeline()
         packet_count = capture_service.get_packet_count()
-        
-        # Generate a lightweight capture report on disk so the operator has a
-        # persisted record of what was seen during this session. Any failures
-        # here should not break the API.
+
+        # Persist session summary as a single aggregate metric (not per-packet)
+        if packet_count > 0:
+            session_metric = Metric(
+                timestamp=datetime.now(),
+                metric_type="capture_session",
+                value=float(packet_count),
+                metric_metadata={
+                    "interface": capture_service.get_interface(),
+                    "duration_seconds": (
+                        (datetime.now() - capture_service.get_start_time()).total_seconds()
+                        if capture_service.get_start_time() else 0
+                    ),
+                },
+            )
+            db.add(session_metric)
+            db.commit()
+
+        # Generate capture report (best-effort — failure must not break the response)
         try:
             generate_capture_report(db)
         except Exception as report_err:
             print(f"Error generating capture report: {report_err}")
-        
+
         return schemas.CaptureStatusResponse(
             is_capturing=False,
             packets_captured=packet_count,
             start_time=None,
             interface=None
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.get("/capture/status", response_model=schemas.CaptureStatusResponse)
@@ -306,10 +318,12 @@ async def retrain_model(
 @router.get("/health")
 async def health_check():
     """Health check endpoint"""
+    pipeline = get_pipeline()
     return {
         "status": "healthy",
         "timestamp": datetime.now(),
-        "capture_active": capture_service.is_capturing
+        "capture_active": capture_service.is_capturing,
+        "pipeline_active": pipeline.is_running,
     }
 
 
