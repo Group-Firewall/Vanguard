@@ -74,6 +74,12 @@ function TrafficMonitoring() {
   // Packet buffer displayed in the live table
   const [packets, setPackets] = useState([])
 
+  // Capture status state (moved from Dashboard)
+  const [captureStatus, setCaptureStatus] = useState({
+    is_capturing: false,
+    packets_captured: 0,
+  })
+
   // UI control state
   const [isPaused, setIsPaused] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
@@ -88,6 +94,45 @@ function TrafficMonitoring() {
   // Ref-based pause flag avoids re-subscribing to WebSocket on toggle
   const isPausedRef = useRef(false)
   isPausedRef.current = isPaused
+
+  // ------------------------------------------------------------------
+  // Capture Status Management (Moved from Dashboard)
+  // ------------------------------------------------------------------
+
+  React.useEffect(() => {
+    // Poll capture status
+    const fetchStatus = async () => {
+      try {
+        const res = await captureAPI.status()
+        setCaptureStatus(res.data)
+      } catch (err) {
+        // quiet fail
+      }
+    }
+    fetchStatus()
+    const interval = setInterval(fetchStatus, 2000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const handleStartCapture = async () => {
+    try {
+      await captureAPI.start()
+      // Optimistic update
+      setCaptureStatus(prev => ({ ...prev, is_capturing: true }))
+    } catch (err) {
+      alert(`Failed to start capture: ${err.message}`)
+    }
+  }
+
+  const handleStopCapture = async () => {
+    try {
+      await captureAPI.stop()
+      // Optimistic update
+      setCaptureStatus(prev => ({ ...prev, is_capturing: false }))
+    } catch (err) {
+      alert(`Failed to stop capture: ${err.message}`)
+    }
+  }
 
   // ------------------------------------------------------------------
   // /ws/packets — raw live packet feed
@@ -237,6 +282,34 @@ function TrafficMonitoring() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Start/Stop Capture Controls */}
+            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl shadow-sm border border-gray-200">
+              <div className="flex items-center gap-2 mr-2">
+                <div
+                  className={`w-2.5 h-2.5 rounded-full ${captureStatus.is_capturing ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`}
+                />
+                <span className="text-xs font-bold text-gray-600">
+                  {captureStatus.is_capturing ? 'CAPTURING' : 'STOPPED'}
+                </span>
+              </div>
+              
+              {captureStatus.is_capturing ? (
+                <button
+                  onClick={handleStopCapture}
+                  className="px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs font-bold hover:bg-red-100 transition-colors"
+                >
+                  Stop
+                </button>
+              ) : (
+                <button
+                  onClick={handleStartCapture}
+                  className="px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg text-xs font-bold hover:bg-blue-100 transition-colors"
+                >
+                  Start
+                </button>
+              )}
+            </div>
+
             {/* Quick stats */}
             <div className="bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-200 flex items-center gap-4">
               <div className="text-right">
