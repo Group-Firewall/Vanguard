@@ -4,6 +4,15 @@ frontend/node_modules/
 
 # Vite cache
 .vite/
+dist/
 
 # Logs
 npm-debug.log*
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store
