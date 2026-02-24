@@ -58,6 +58,18 @@ function AlertsIncidents() {
   })
   const [exportPeriod, setExportPeriod] = useState('24h')
 
+  const [openActionId, setOpenActionId] = useState(null)
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (!event.target.closest('.action-menu-container')) {
+        setOpenActionId(null);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
   useEffect(() => {
     loadAlerts()
     const interval = setInterval(loadAlerts, 10000)
@@ -379,36 +391,58 @@ function AlertsIncidents() {
                     {format(new Date(alert.timestamp), 'HH:mm:ss')}
                   </td>
                   <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
-                    <div className="relative group/menu inline-block">
-                      <button className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-lg text-[10px] font-black uppercase transition-all">
-                        Mitigate <ChevronDown className="w-3 h-3" />
+                    <div className="relative inline-block action-menu-container">
+                      <button 
+                        onClick={() => setOpenActionId(openActionId === alert.id ? null : alert.id)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${
+                          openActionId === alert.id 
+                            ? 'bg-blue-600 text-white' 
+                            : 'bg-slate-100 text-gray-700 hover:bg-slate-200'
+                        }`}
+                      >
+                        Actions <ChevronDown className={`w-3 h-3 transition-transform ${openActionId === alert.id ? 'rotate-180' : ''}`} />
                       </button>
-                      <div className="absolute right-0 mt-1 w-40 bg-white border border-slate-200 rounded-xl shadow-xl py-1 hidden group-hover/menu:block z-20 animate-in fade-in slide-in-from-top-1 duration-150">
-                        <button
-                          onClick={() => handleBlockIP(alert.source_ip)}
-                          className="w-full text-left px-4 py-2 text-[10px] font-bold text-slate-700 hover:bg-red-50 hover:text-red-600 uppercase flex items-center gap-2"
-                        >
-                          <Lock className="w-3 h-3" /> Block IP
-                        </button>
-                        <button
-                          onClick={() => handleResolve(alert.id)}
-                          className="w-full text-left px-4 py-2 text-[10px] font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-600 uppercase flex items-center gap-2"
-                        >
-                          <CheckCircle className="w-3 h-3" /> Mark Resolved
-                        </button>
-                        <button
-                          onClick={() => handleEscalate(alert.id)}
-                          className="w-full text-left px-4 py-2 text-[10px] font-bold text-slate-700 hover:bg-orange-50 hover:text-orange-600 uppercase flex items-center gap-2"
-                        >
-                          <ExternalLink className="w-3 h-3" /> Escalate
-                        </button>
-                        <button
-                          onClick={() => handleIgnore(alert.id)}
-                          className="w-full text-left px-4 py-2 text-[10px] font-bold text-slate-700 hover:bg-slate-50 hover:text-slate-400 uppercase flex items-center gap-2"
-                        >
-                          <X className="w-3 h-3" /> Ignore / FP
-                        </button>
-                      </div>
+                      
+                      {openActionId === alert.id && (
+                        <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-xl py-1 z-30 animate-in fade-in zoom-in-95 duration-100 origin-top-right">
+                          <button
+                            onClick={() => {
+                              handleBlockIP(alert.source_ip);
+                              setOpenActionId(null);
+                            }}
+                            className="w-full text-left px-4 py-2.5 text-[11px] font-bold text-slate-700 hover:bg-red-50 hover:text-red-600 uppercase flex items-center gap-3 transition-colors"
+                          >
+                            <Lock className="w-3.5 h-3.5" /> Block Source IP
+                          </button>
+                          <button
+                            onClick={() => {
+                              handleResolve(alert.id);
+                              setOpenActionId(null);
+                            }}
+                            className="w-full text-left px-4 py-2.5 text-[11px] font-bold text-slate-700 hover:bg-green-50 hover:text-green-600 uppercase flex items-center gap-3 transition-colors"
+                          >
+                            <CheckCircle className="w-3.5 h-3.5" /> Mark Resolved
+                          </button>
+                          <button
+                            onClick={() => {
+                              handleEscalate(alert.id);
+                              setOpenActionId(null);
+                            }}
+                            className="w-full text-left px-4 py-2.5 text-[11px] font-bold text-slate-700 hover:bg-orange-50 hover:text-orange-600 uppercase flex items-center gap-3 transition-colors"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" /> Escalate Alert
+                          </button>
+                          <button
+                            onClick={() => {
+                              handleIgnore(alert.id);
+                              setOpenActionId(null);
+                            }}
+                            className="w-full text-left px-4 py-2.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50 hover:text-slate-500 uppercase flex items-center gap-3 transition-colors border-t border-slate-100 mt-1"
+                          >
+                            <X className="w-3.5 h-3.5" /> Ignore / False Positive
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </td>
                 </tr>
