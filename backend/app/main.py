@@ -2,7 +2,7 @@
 import sys
 import os
 
-# Add project root to sys.path preventing ImportErrors
+# Adding project root to sys.path preventing ImportErrors
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI
@@ -11,7 +11,7 @@ from app.config import settings
 from app.api import routes, websocket
 from app.database import init_db
 
-# Create FastAPI app
+# The Creation FastAPI app
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.VERSION,
@@ -41,9 +41,11 @@ app.include_router(websocket.router, prefix="/ws", tags=["websocket"])
 from app.api import ml_routes
 app.include_router(ml_routes.router, prefix="/api", tags=["ml"])
 
-# Include stats routes
+# Including stats routes
 from app.api import stats_routes
 app.include_router(stats_routes.router, prefix="/api", tags=["stats"])
+
+                                                      
 
 
 @app.on_event("startup")
