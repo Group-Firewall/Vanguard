@@ -1,22 +1,23 @@
 """ML-specific API routes for predictions and training"""
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 import numpy as np
 
 from app.database import get_db
 from app import schemas
-from app.services.ml_service import MLService
+from app.services.ml_service import MLService, get_ml_service
 from app.models import Alert, Metric, ModelPerformance
-from app.services.detection_engine import DetectionEngine
+from app.services.detection_engine import DetectionEngine, get_detection_engine
 from app.services.feature_extraction import FeatureExtractionService
 
 router = APIRouter()
 
-# Initialize services
-ml_service = MLService()
-detection_engine = DetectionEngine()
+# Initialize services using singleton pattern
+ml_service = get_ml_service()
+detection_engine = get_detection_engine()
 feature_extractor = FeatureExtractionService()
 
 
@@ -204,7 +205,7 @@ async def health_check(db: Session = Depends(get_db)):
         # Check database connection
         db_status = "healthy"
         try:
-            db.execute("SELECT 1")
+            db.execute(text("SELECT 1"))
         except Exception:
             db_status = "unhealthy"
         
@@ -222,7 +223,7 @@ async def health_check(db: Session = Depends(get_db)):
         ).count()
         
         return schemas.HealthResponse(
-            status="healthy" if db_status == "healthy" and model_status.get("hybrid_loaded", False) else "degraded",
+            status="healthy" if db_status == "healthy" and model_status.get("models_loaded", False) else "degraded",
             timestamp=datetime.now(),
             database=db_status,
             models=model_status,

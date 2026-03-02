@@ -8,7 +8,7 @@ import asyncio
 from app.database import get_db
 from app import schemas
 from app.services.packet_capture import PacketCaptureService
-from app.services.detection_engine import DetectionEngine
+from app.services.detection_engine import get_detection_engine
 from app.services.alert_manager import AlertManager
 from app.services.model_service import ModelService
 from app.services.report_service import generate_capture_report
@@ -20,7 +20,7 @@ router = APIRouter()
 
 # Initialize services
 capture_service = PacketCaptureService()
-detection_engine = DetectionEngine()
+detection_engine = get_detection_engine()
 alert_manager = AlertManager()
 model_service = ModelService()
 

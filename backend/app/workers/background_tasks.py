@@ -34,7 +34,7 @@ from app.core.broadcaster import alert_broadcaster, metrics_broadcaster, packet_
 from app.core.stream import AlertData, MetricsSnapshot, PacketData, packet_stream
 from app.database import SessionLocal
 from app.services.alert_manager import AlertManager
-from app.services.detection_engine import DetectionEngine
+from app.services.detection_engine import get_detection_engine
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ class PacketProcessingPipeline:
     """Async batch processing pipeline — consumes from packet_stream queue."""
 
     def __init__(self) -> None:
-        self._detection_engine = DetectionEngine()
+        self._detection_engine = get_detection_engine()
         self._alert_manager = AlertManager()
         self._is_running: bool = False
 
@@ -168,6 +168,13 @@ class PacketProcessingPipeline:
                         "is_intrusion": 1 if is_malicious else 0,
                         "scan_type": detection_result.get("attack_type", "Normal"),
                         "threat_score": detection_result.get("threat_score", 0.0),
+                        "severity": detection_result.get("severity", "low"),
+                        "detection_method": detection_result.get("detection_method", "none"),
+                        "confidence": detection_result.get("confidence", 0.0),
+                        "signature_match": detection_result.get("signature_match", False),
+                        "ml_prediction": detection_result.get("ml_prediction", 0.0),
+                        "anomaly_score": detection_result.get("anomaly_score", 0.0),
+                        "hybrid_score": detection_result.get("hybrid_score", 0.0),
                     },
                 })
 
