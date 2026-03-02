@@ -1,323 +1,310 @@
-"""Unsupervised learning models for zero-day attack detection"""
-import pickle
+"""
+Unsupervised Anomaly Detection Models for Novel Threat Detection
+Implements Isolation Forest, One-Class SVM, and Autoencoder
+"""
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 from sklearn.ensemble import IsolationForest
 from sklearn.svm import OneClassSVM
-from sklearn.preprocessing import StandardScaler
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset
-import logging
+from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
+import joblib
+import time
+import warnings
+warnings.filterwarnings('ignore')
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-
-class Autoencoder(nn.Module):
-    """Autoencoder for anomaly detection"""
-    
-    def __init__(self, input_dim: int, encoding_dim: int = 32):
-        super(Autoencoder, self).__init__()
-        
-        # Encoder
-        self.encoder = nn.Sequential(
-            nn.Linear(input_dim, 128),
-            nn.ReLU(),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, encoding_dim),
-            nn.ReLU()
-        )
-        
-        # Decoder
-        self.decoder = nn.Sequential(
-            nn.Linear(encoding_dim, 64),
-            nn.ReLU(),
-            nn.Linear(64, 128),
-            nn.ReLU(),
-            nn.Linear(128, input_dim),
-            nn.Sigmoid()
-        )
-    
-    def forward(self, x):
-        encoded = self.encoder(x)
-        decoded = self.decoder(encoded)
-        return decoded
+try:
+    from tensorflow import keras
+    from tensorflow.keras import layers
+    TENSORFLOW_AVAILABLE = True
+except ImportError:
+    TENSORFLOW_AVAILABLE = False
+    print("TensorFlow not available. Autoencoder will use sklearn's MLPRegressor.")
 
 
 class UnsupervisedModelTrainer:
-    """Train and manage unsupervised learning models"""
+    """Trains and evaluates unsupervised models for novel threat detection"""
     
-    def __init__(self, model_path: Optional[Path] = None):
-        if model_path is None:
-            try:
-                from app.config import settings
-            except ImportError:
-                import sys
-                from pathlib import Path as P
-                sys.path.insert(0, str(P(__file__).parent.parent.parent))
-                from app.config import settings
-            model_path = Path(settings.UNSUPERVISED_MODEL_PATH)
-        self.model_path = model_path
-        self.model_path.mkdir(parents=True, exist_ok=True)
+    def __init__(self):
         self.models = {}
-        self.scalers = {}
-        self.feature_names = []
-    
-    def prepare_data(self, df: pd.DataFrame, label_col: Optional[str] = 'label') -> np.ndarray:
-        """Prepare data for training (use only normal samples)"""
-        # Select numerical features
-        X = df.select_dtypes(include=[np.number])
+        self.results = {}
+        self.thresholds = {}
         
-        # If label column exists, filter to normal samples only
-        if label_col and label_col in df.columns:
-            normal_mask = df[label_col].str.lower().isin(['normal', 'benign', '0'])
-            X = X[normal_mask.values]
-            logger.info(f"Using {len(X)} normal samples for training")
+    def train_isolation_forest(self, X_train, X_val, y_val=None, **kwargs):
+        """Train Isolation Forest for anomaly detection"""
+        print("Training Isolation Forest...")
+        start_time = time.time()
         
-        # Store feature names
-        self.feature_names = X.columns.tolist()
-        
-        return X.values
-    
-    def train_isolation_forest(
-        self,
-        X: np.ndarray,
-        contamination: float = 0.1,
-        n_estimators: int = 100,
-        random_state: int = 42
-    ) -> IsolationForest:
-        """Train Isolation Forest model"""
-        logger.info("Training Isolation Forest model...")
-        
-        # Scale features
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-        
-        model = IsolationForest(
-            contamination=contamination,
-            n_estimators=n_estimators,
-            random_state=random_state,
-            n_jobs=-1,
-            verbose=1
+        iso_forest = IsolationForest(
+            n_estimators=kwargs.get('n_estimators', 100),
+            contamination=kwargs.get('contamination', 0.1),
+            random_state=42,
+            n_jobs=-1
         )
         
-        model.fit(X_scaled)
-        self.models['isolation_forest'] = model
-        self.scalers['isolation_forest'] = scaler
+        iso_forest.fit(X_train)
         
-        # Save model
-        model_file = self.model_path / "isolation_forest.pkl"
-        with open(model_file, 'wb') as f:
-            pickle.dump({'model': model, 'scaler': scaler}, f)
+        # Predict anomalies (1 = normal, -1 = anomaly)
+        train_scores = iso_forest.decision_function(X_train)
+        val_scores = iso_forest.decision_function(X_val)
         
-        logger.info(f"Isolation Forest model saved to {model_file}")
-        return model
-    
-    def train_one_class_svm(
-        self,
-        X: np.ndarray,
-        nu: float = 0.1,
-        kernel: str = 'rbf',
-        gamma: str = 'scale'
-    ) -> OneClassSVM:
-        """Train One-Class SVM model"""
-        logger.info("Training One-Class SVM model...")
+        # Convert to anomaly scores (lower = more anomalous)
+        train_anomaly_scores = -train_scores
+        val_anomaly_scores = -val_scores
         
-        # Scale features
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
+        # Set threshold based on training data
+        threshold = np.percentile(train_anomaly_scores, 90)  # Top 10% as anomalies
+        self.thresholds['isolation_forest'] = threshold
         
-        # For large datasets, sample
-        if len(X_scaled) > 10000:
-            logger.warning("Large dataset detected. Sampling for efficiency.")
-            indices = np.random.choice(len(X_scaled), size=10000, replace=False)
-            X_scaled = X_scaled[indices]
-        
-        model = OneClassSVM(
-            nu=nu,
-            kernel=kernel,
-            gamma=gamma,
-            verbose=True
-        )
-        
-        model.fit(X_scaled)
-        self.models['one_class_svm'] = model
-        self.scalers['one_class_svm'] = scaler
-        
-        # Save model
-        model_file = self.model_path / "one_class_svm.pkl"
-        with open(model_file, 'wb') as f:
-            pickle.dump({'model': model, 'scaler': scaler}, f)
-        
-        logger.info(f"One-Class SVM model saved to {model_file}")
-        return model
-    
-    def train_autoencoder(
-        self,
-        X: np.ndarray,
-        encoding_dim: int = 32,
-        epochs: int = 50,
-        batch_size: int = 32,
-        learning_rate: float = 0.001,
-        device: str = 'cpu'
-    ) -> Autoencoder:
-        """Train Autoencoder model"""
-        logger.info("Training Autoencoder model...")
-        
-        # Scale features
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-        
-        # Convert to tensors
-        X_tensor = torch.FloatTensor(X_scaled)
-        dataset = TensorDataset(X_tensor)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-        
-        # Initialize model
-        input_dim = X_scaled.shape[1]
-        model = Autoencoder(input_dim=input_dim, encoding_dim=encoding_dim)
-        model = model.to(device)
-        
-        # Loss and optimizer
-        criterion = nn.MSELoss()
-        optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-        
-        # Training loop
-        model.train()
-        for epoch in range(epochs):
-            total_loss = 0
-            for batch in dataloader:
-                x = batch[0].to(device)
-                
-                optimizer.zero_grad()
-                reconstructed = model(x)
-                loss = criterion(reconstructed, x)
-                loss.backward()
-                optimizer.step()
-                
-                total_loss += loss.item()
+        # Evaluate if labels available
+        metrics = {}
+        if y_val is not None:
+            y_pred = (val_anomaly_scores > threshold).astype(int)
+            # Invert: 1 = anomaly, 0 = normal (matching y_val where 1 = intrusion)
+            y_pred = 1 - y_pred  # Isolation Forest: -1 = anomaly, so we invert
             
-            if (epoch + 1) % 10 == 0:
-                logger.info(f"Epoch [{epoch+1}/{epochs}], Loss: {total_loss/len(dataloader):.4f}")
+            metrics = self._calculate_metrics(y_val, y_pred, val_anomaly_scores)
         
-        self.models['autoencoder'] = model
-        self.scalers['autoencoder'] = scaler
+        metrics['training_time'] = time.time() - start_time
+        metrics['threshold'] = threshold
         
-        # Save model
-        model_file = self.model_path / "autoencoder.pkl"
-        with open(model_file, 'wb') as f:
-            pickle.dump({'model': model, 'scaler': scaler, 'encoding_dim': encoding_dim}, f)
+        self.models['isolation_forest'] = iso_forest
+        self.results['isolation_forest'] = metrics
         
-        logger.info(f"Autoencoder model saved to {model_file}")
-        return model
+        print(f"Isolation Forest - Threshold: {threshold:.4f}")
+        if y_val is not None:
+            print(f"  Accuracy: {metrics.get('accuracy', 0):.4f}, F1: {metrics.get('f1', 0):.4f}")
+        
+        return iso_forest, metrics
     
-    def train_all_models(
-        self,
-        df: pd.DataFrame,
-        label_col: Optional[str] = 'label'
-    ) -> Dict[str, Dict]:
+    def train_one_class_svm(self, X_train, X_val, y_val=None, **kwargs):
+        """Train One-Class SVM for anomaly detection"""
+        print("Training One-Class SVM...")
+        start_time = time.time()
+        
+        oc_svm = OneClassSVM(
+            nu=kwargs.get('nu', 0.1),  # Expected fraction of outliers
+            kernel=kwargs.get('kernel', 'rbf'),
+            gamma=kwargs.get('gamma', 'scale')
+        )
+        
+        oc_svm.fit(X_train)
+        
+        # Get decision scores
+        val_scores = oc_svm.decision_function(X_val)
+        
+        # Set threshold
+        threshold = np.percentile(val_scores, 10)  # Bottom 10% as anomalies
+        self.thresholds['one_class_svm'] = threshold
+        
+        # Evaluate if labels available
+        metrics = {}
+        if y_val is not None:
+            y_pred = (val_scores < threshold).astype(int)  # Lower scores = anomalies
+            metrics = self._calculate_metrics(y_val, y_pred, -val_scores)
+        
+        metrics['training_time'] = time.time() - start_time
+        metrics['threshold'] = threshold
+        
+        self.models['one_class_svm'] = oc_svm
+        self.results['one_class_svm'] = metrics
+        
+        print(f"One-Class SVM - Threshold: {threshold:.4f}")
+        if y_val is not None:
+            print(f"  Accuracy: {metrics.get('accuracy', 0):.4f}, F1: {metrics.get('f1', 0):.4f}")
+        
+        return oc_svm, metrics
+    
+    def train_autoencoder(self, X_train, X_val, y_val=None, **kwargs):
+        """Train Autoencoder for anomaly detection"""
+        print("Training Autoencoder...")
+        start_time = time.time()
+        
+        input_dim = X_train.shape[1]
+        encoding_dim = kwargs.get('encoding_dim', max(3, input_dim // 4))
+        
+        if TENSORFLOW_AVAILABLE:
+            # Build autoencoder
+            input_layer = layers.Input(shape=(input_dim,))
+            encoded = layers.Dense(encoding_dim * 2, activation='relu')(input_layer)
+            encoded = layers.Dense(encoding_dim, activation='relu')(encoded)
+            decoded = layers.Dense(encoding_dim * 2, activation='relu')(encoded)
+            decoded = layers.Dense(input_dim, activation='sigmoid')(decoded)
+            
+            autoencoder = keras.Model(input_layer, decoded)
+            autoencoder.compile(optimizer='adam', loss='mse')
+            
+            # Train
+            history = autoencoder.fit(
+                X_train, X_train,
+                epochs=kwargs.get('epochs', 50),
+                batch_size=kwargs.get('batch_size', 32),
+                validation_data=(X_val, X_val),
+                verbose=0
+            )
+            
+            # Calculate reconstruction errors
+            train_reconstructions = autoencoder.predict(X_train, verbose=0)
+            val_reconstructions = autoencoder.predict(X_val, verbose=0)
+            
+            train_errors = np.mean(np.square(X_train - train_reconstructions), axis=1)
+            val_errors = np.mean(np.square(X_val - val_reconstructions), axis=1)
+            
+            # Set threshold
+            threshold = np.percentile(train_errors, 90)
+            self.thresholds['autoencoder'] = threshold
+            
+            # Evaluate if labels available
+            metrics = {}
+            if y_val is not None:
+                y_pred = (val_errors > threshold).astype(int)
+                metrics = self._calculate_metrics(y_val, y_pred, val_errors)
+            
+            metrics['training_time'] = time.time() - start_time
+            metrics['threshold'] = threshold
+            metrics['history'] = history.history
+            
+            self.models['autoencoder'] = autoencoder
+            self.results['autoencoder'] = metrics
+            
+        else:
+            # Fallback to simple reconstruction-based approach
+            from sklearn.neural_network import MLPRegressor
+            from sklearn.preprocessing import MinMaxScaler
+            
+            scaler = MinMaxScaler()
+            X_train_scaled = scaler.fit_transform(X_train)
+            X_val_scaled = scaler.transform(X_val)
+            
+            mlp = MLPRegressor(
+                hidden_layer_sizes=(encoding_dim * 2, encoding_dim, encoding_dim * 2),
+                max_iter=kwargs.get('epochs', 200),
+                random_state=42,
+                verbose=False
+            )
+            
+            mlp.fit(X_train_scaled, X_train_scaled)
+            
+            train_reconstructions = mlp.predict(X_train_scaled)
+            val_reconstructions = mlp.predict(X_val_scaled)
+            
+            train_errors = np.mean(np.square(X_train_scaled - train_reconstructions), axis=1)
+            val_errors = np.mean(np.square(X_val_scaled - val_reconstructions), axis=1)
+            
+            threshold = np.percentile(train_errors, 90)
+            self.thresholds['autoencoder'] = threshold
+            
+            metrics = {}
+            if y_val is not None:
+                y_pred = (val_errors > threshold).astype(int)
+                metrics = self._calculate_metrics(y_val, y_pred, val_errors)
+            
+            metrics['training_time'] = time.time() - start_time
+            metrics['threshold'] = threshold
+            
+            self.models['autoencoder'] = {'model': mlp, 'scaler': scaler}
+            self.results['autoencoder'] = metrics
+        
+        print(f"Autoencoder - Threshold: {threshold:.4f}")
+        if y_val is not None:
+            print(f"  Accuracy: {metrics.get('accuracy', 0):.4f}, F1: {metrics.get('f1', 0):.4f}")
+        
+        return self.models['autoencoder'], metrics
+    
+    def train_all(self, X_train, X_val, y_val=None):
         """Train all unsupervised models"""
-        logger.info("Training all unsupervised models...")
+        print("\n=== Training Unsupervised Models ===")
         
-        # Prepare data (normal samples only)
-        X = self.prepare_data(df, label_col)
+        self.train_isolation_forest(X_train, X_val, y_val)
+        self.train_one_class_svm(X_train, X_val, y_val)
+        self.train_autoencoder(X_train, X_val, y_val)
         
-        # Train models
-        self.train_isolation_forest(X)
-        self.train_one_class_svm(X)
-        
-        # Train autoencoder if GPU available or small dataset
-        try:
-            device = 'cuda' if torch.cuda.is_available() else 'cpu'
-            logger.info(f"Using device: {device}")
-            self.train_autoencoder(X, device=device)
-        except Exception as e:
-            logger.warning(f"Could not train autoencoder: {e}")
-        
-        return {}
+        return self.models, self.results
     
-    def predict_anomaly(
-        self,
-        model_name: str,
-        X: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """Predict anomalies with a model"""
+    def get_best_model(self):
+        """Get the best performing model based on F1 score"""
+        if not self.results:
+            return None, None
+        
+        # Filter models with metrics
+        models_with_metrics = {
+            k: v for k, v in self.results.items() 
+            if 'f1' in v and v['f1'] > 0
+        }
+        
+        if not models_with_metrics:
+            return None, None
+        
+        best_model_name = max(models_with_metrics.keys(), key=lambda k: models_with_metrics[k]['f1'])
+        return best_model_name, self.models[best_model_name]
+    
+    def _calculate_metrics(self, y_true, y_pred, anomaly_scores):
+        """Calculate evaluation metrics"""
+        from sklearn.metrics import (
+            accuracy_score, precision_score, recall_score, f1_score,
+            confusion_matrix
+        )
+        
+        return {
+            'accuracy': accuracy_score(y_true, y_pred),
+            'precision': precision_score(y_true, y_pred, zero_division=0),
+            'recall': recall_score(y_true, y_pred),
+            'f1': f1_score(y_true, y_pred),
+            'confusion_matrix': confusion_matrix(y_true, y_pred).tolist(),
+            'tn': confusion_matrix(y_true, y_pred)[0, 0],
+            'fp': confusion_matrix(y_true, y_pred)[0, 1],
+            'fn': confusion_matrix(y_true, y_pred)[1, 0],
+            'tp': confusion_matrix(y_true, y_pred)[1, 1]
+        }
+    
+    def predict_anomaly(self, model_name, X):
+        """Predict anomalies using a trained model"""
         if model_name not in self.models:
-            self.load_model(model_name)
+            raise ValueError(f"Model {model_name} not found")
         
         model = self.models[model_name]
-        scaler = self.scalers.get(model_name)
+        threshold = self.thresholds.get(model_name, 0)
         
-        # Scale features
-        if scaler:
-            X_scaled = scaler.transform(X)
-        else:
-            X_scaled = X
-        
-        # Predict
-        if model_name == 'autoencoder':
-            model.eval()
-            with torch.no_grad():
-                X_tensor = torch.FloatTensor(X_scaled)
-                reconstructed = model(X_tensor)
-                # Anomaly score is reconstruction error
-                errors = torch.mean((X_tensor - reconstructed) ** 2, dim=1).numpy()
-                predictions = (errors > np.percentile(errors, 90)).astype(int)  # Top 10% as anomalies
-                scores = errors
-        elif model_name in ['isolation_forest', 'one_class_svm']:
-            predictions = model.predict(X_scaled)
-            scores = model.score_samples(X_scaled)
-            # Convert -1/1 to 0/1
-            predictions = (predictions == -1).astype(int)
+        if model_name == 'isolation_forest':
+            scores = -model.decision_function(X)
+            return (scores > threshold).astype(int)
+        elif model_name == 'one_class_svm':
+            scores = model.decision_function(X)
+            return (scores < threshold).astype(int)
+        elif model_name == 'autoencoder':
+            if TENSORFLOW_AVAILABLE:
+                try:
+                    reconstructions = model.predict(X, verbose=0)
+                    errors = np.mean(np.square(X - reconstructions), axis=1)
+                except:
+                    # Fallback if model structure is different
+                    return np.zeros(X.shape[0], dtype=int)
+            else:
+                if isinstance(model, dict) and 'scaler' in model:
+                    scaler = model['scaler']
+                    model_mlp = model['model']
+                    X_scaled = scaler.transform(X)
+                    reconstructions = model_mlp.predict(X_scaled)
+                    errors = np.mean(np.square(X_scaled - reconstructions), axis=1)
+                else:
+                    return np.zeros(X.shape[0], dtype=int)
+            return (errors > threshold).astype(int)
         else:
             raise ValueError(f"Unknown model: {model_name}")
-        
-        return predictions, scores
     
-    def load_model(self, model_name: str):
-        """Load a saved model"""
-        model_file = self.model_path / f"{model_name}.pkl"
-        if not model_file.exists():
-            raise FileNotFoundError(f"Model {model_name} not found at {model_file}")
-        
-        with open(model_file, 'rb') as f:
-            data = pickle.load(f)
-        
-        if isinstance(data, dict):
-            self.models[model_name] = data['model']
-            if 'scaler' in data:
-                self.scalers[model_name] = data['scaler']
-        else:
-            self.models[model_name] = data
-
-
-def main():
-    """Main entry point for training"""
-    import sys
-    from pathlib import Path as P
-    sys.path.insert(0, str(P(__file__).parent.parent.parent))
-    from app.config import settings
-    import pandas as pd
+    def save_model(self, model_name, filepath):
+        """Save a model to disk"""
+        if model_name not in self.models:
+            raise ValueError(f"Model {model_name} not found")
+        joblib.dump({
+            'model': self.models[model_name],
+            'threshold': self.thresholds.get(model_name)
+        }, filepath)
     
-    # Load merged dataset
-    data_path = Path(settings.DATA_PATH) / "merged_dataset.parquet"
-    if not data_path.exists():
-        logger.error(f"Dataset not found at {data_path}. Please run data pipeline first.")
-        return
-    
-    df = pd.read_parquet(data_path)
-    logger.info(f"Loaded dataset with {len(df)} records")
-    
-    # Train models
-    trainer = UnsupervisedModelTrainer()
-    trainer.train_all_models(df)
-
-
-if __name__ == "__main__":
-    main()
-
+    def load_model(self, model_name, filepath):
+        """Load a model from disk"""
+        data = joblib.load(filepath)
+        self.models[model_name] = data['model']
+        if 'threshold' in data:
+            self.thresholds[model_name] = data['threshold']
+        return self.models[model_name]

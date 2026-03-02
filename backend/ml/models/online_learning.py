@@ -1,239 +1,147 @@
-"""Online learning using River library"""
+"""
+Online Learning Module for Adaptive Model Updates
+
+This module provides incremental learning capabilities for the NIDS,
+allowing models to adapt to new attack patterns without full retraining.
+"""
+
 import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional
-from pathlib import Path
-import pickle
 import logging
+from typing import Dict, List, Optional, Any
+from datetime import datetime
 
-try:
-    from river import tree, ensemble, linear_model, metrics, compose, preprocessing
-    RIVER_AVAILABLE = True
-except ImportError:
-    RIVER_AVAILABLE = False
-    logging.warning("River library not available. Online learning will be limited.")
-
-from app.config import settings
-
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class OnlineLearner:
-    """Online learning for incremental model updates"""
+    """
+    Online learning system for adaptive model updates.
     
-    def __init__(self):
-        if not RIVER_AVAILABLE:
-            logger.warning("River not available. Using scikit-learn partial_fit instead.")
-            self.use_river = False
-        else:
-            self.use_river = True
-        
-        self.models = {}
-        self.metrics = {}
-        self.model_path = Path(settings.MODEL_PATH) / "online"
-        self.model_path.mkdir(parents=True, exist_ok=True)
+    Supports incremental updates to models as new data becomes available,
+    enabling the NIDS to adapt to evolving threats.
+    """
     
-    def create_river_model(self, model_type: str = 'adaptive_random_forest'):
-        """Create a River-based online learning model"""
-        if not RIVER_AVAILABLE:
-            raise ImportError("River library not available")
+    def __init__(self, learning_rate: float = 0.01, window_size: int = 1000):
+        self.learning_rate = learning_rate
+        self.window_size = window_size
+        self.sample_buffer: List[Dict] = []
+        self.label_buffer: List[int] = []
+        self.update_count = 0
+        self.last_update: Optional[datetime] = None
+        self.metrics_history: List[Dict] = []
         
-        # Preprocessing pipeline
-        preprocessor = compose.Pipeline(
-            preprocessing.StandardScaler(),
-        )
-        
-        # Model selection
-        if model_type == 'adaptive_random_forest':
-            model = ensemble.AdaptiveRandomForestClassifier(
-                n_models=10,
-                seed=42
-            )
-        elif model_type == 'hoeffding_tree':
-            model = tree.HoeffdingTreeClassifier()
-        elif model_type == 'logistic_regression':
-            model = linear_model.LogisticRegression()
-        else:
-            raise ValueError(f"Unknown model type: {model_type}")
-        
-        # Combine preprocessor and model
-        pipeline = compose.Pipeline(preprocessor, model)
-        
-        return pipeline
+        logger.info(f"OnlineLearner initialized (lr={learning_rate}, window={window_size})")
     
-    def create_sklearn_online_model(self, model_type: str = 'sgd'):
-        """Create scikit-learn online learning model"""
-        from sklearn.linear_model import SGDClassifier
-        from sklearn.naive_bayes import MultinomialNB
+    def add_sample(self, features: Dict, label: int) -> None:
+        """
+        Add a new sample to the learning buffer.
         
-        if model_type == 'sgd':
-            model = SGDClassifier(
-                loss='log_loss',
-                learning_rate='adaptive',
-                eta0=0.01,
-                random_state=42
-            )
-        elif model_type == 'naive_bayes':
-            model = MultinomialNB()
-        else:
-            raise ValueError(f"Unknown model type: {model_type}")
+        Args:
+            features: Dictionary of feature values
+            label: Ground truth label (0=normal, 1=attack)
+        """
+        self.sample_buffer.append(features)
+        self.label_buffer.append(label)
         
-        return model
+        # Maintain window size
+        if len(self.sample_buffer) > self.window_size:
+            self.sample_buffer = self.sample_buffer[-self.window_size:]
+            self.label_buffer = self.label_buffer[-self.window_size:]
     
-    def train_online(
-        self,
-        model_name: str,
-        X: np.ndarray,
-        y: np.ndarray,
-        model_type: str = 'adaptive_random_forest'
-    ):
-        """Train model incrementally"""
-        if model_name not in self.models:
-            if self.use_river:
-                self.models[model_name] = self.create_river_model(model_type)
-                self.metrics[model_name] = metrics.Accuracy()
-            else:
-                self.models[model_name] = self.create_sklearn_online_model(model_type)
-                self.metrics[model_name] = {'accuracy': 0.0, 'samples_seen': 0}
+    def should_update(self, min_samples: int = 100) -> bool:
+        """
+        Check if we have enough new samples to trigger an update.
         
-        model = self.models[model_name]
+        Args:
+            min_samples: Minimum number of new samples required
+            
+        Returns:
+            True if update should be performed
+        """
+        return len(self.sample_buffer) >= min_samples
+    
+    def update_model(self, model: Any) -> Optional[Dict]:
+        """
+        Perform incremental update on the model.
         
-        if self.use_river:
-            # River: one sample at a time
-            for i in range(len(X)):
-                x_dict = {f'feature_{j}': float(X[i, j]) for j in range(X.shape[1])}
-                y_true = int(y[i])
-                
-                # Predict
-                y_pred = model.predict_one(x_dict)
-                
-                # Update
-                model.learn_one(x_dict, y_true)
-                self.metrics[model_name].update(y_true, y_pred)
-        else:
-            # scikit-learn: batch partial_fit
+        Note: This is a placeholder - actual implementation depends on
+        the model type (sklearn models typically don't support online learning,
+        would need to use partial_fit or retrain with recent data).
+        
+        Args:
+            model: The model to update
+            
+        Returns:
+            Dictionary with update metrics, or None if update failed
+        """
+        if not self.sample_buffer:
+            return None
+        
+        try:
+            # Check if model supports partial_fit
             if hasattr(model, 'partial_fit'):
-                # Get unique classes for first fit
-                if not hasattr(model, 'classes_'):
-                    classes = np.unique(y)
-                    model.partial_fit(X, y, classes=classes)
-                else:
-                    model.partial_fit(X, y)
+                X = self._features_to_array(self.sample_buffer)
+                y = np.array(self.label_buffer)
+                model.partial_fit(X, y, classes=[0, 1])
                 
-                # Calculate accuracy
-                y_pred = model.predict(X)
-                accuracy = np.mean(y_pred == y)
-                self.metrics[model_name]['accuracy'] = accuracy
-                self.metrics[model_name]['samples_seen'] += len(X)
+                self.update_count += 1
+                self.last_update = datetime.now()
+                
+                metrics = {
+                    'update_count': self.update_count,
+                    'samples_used': len(self.sample_buffer),
+                    'timestamp': self.last_update.isoformat()
+                }
+                self.metrics_history.append(metrics)
+                
+                # Clear buffer after successful update
+                self.sample_buffer = []
+                self.label_buffer = []
+                
+                logger.info(f"Online update #{self.update_count} completed")
+                return metrics
             else:
-                # Fallback: full fit
-                model.fit(X, y)
+                logger.warning("Model does not support partial_fit - skipping online update")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Online update failed: {e}")
+            return None
     
-    def predict_online(self, model_name: str, X: np.ndarray) -> np.ndarray:
-        """Make predictions with online model"""
-        if model_name not in self.models:
-            raise ValueError(f"Model {model_name} not found")
+    def _features_to_array(self, samples: List[Dict]) -> np.ndarray:
+        """Convert list of feature dicts to numpy array."""
+        if not samples:
+            return np.array([])
         
-        model = self.models[model_name]
+        # Get all feature keys from first sample
+        keys = list(samples[0].keys())
         
-        if self.use_river:
-            predictions = []
-            for i in range(len(X)):
-                x_dict = {f'feature_{j}': float(X[i, j]) for j in range(X.shape[1])}
-                pred = model.predict_one(x_dict)
-                predictions.append(pred)
-            return np.array(predictions)
-        else:
-            return model.predict(X)
+        # Build feature matrix
+        X = np.zeros((len(samples), len(keys)))
+        for i, sample in enumerate(samples):
+            for j, key in enumerate(keys):
+                try:
+                    X[i, j] = float(sample.get(key, 0))
+                except (ValueError, TypeError):
+                    X[i, j] = 0.0
+        
+        return X
     
-    def update_from_packet(
-        self,
-        model_name: str,
-        packet_features: Dict,
-        label: Optional[str] = None,
-        feedback: Optional[bool] = None
-    ):
-        """Update model from a single packet with optional feedback"""
-        # Convert packet features to feature vector
-        feature_vector = np.array([v for k, v in packet_features.items() if isinstance(v, (int, float))])
-        
-        if label is not None:
-            # Convert label to binary (0 = normal, 1 = attack)
-            y = 0 if label.lower() in ['normal', 'benign'] else 1
-            self.train_online(model_name, feature_vector.reshape(1, -1), np.array([y]))
-        elif feedback is not None:
-            # Use feedback (True = attack, False = normal)
-            y = 1 if feedback else 0
-            self.train_online(model_name, feature_vector.reshape(1, -1), np.array([y]))
+    def get_statistics(self) -> Dict[str, Any]:
+        """Get online learning statistics."""
+        return {
+            'buffer_size': len(self.sample_buffer),
+            'update_count': self.update_count,
+            'last_update': self.last_update.isoformat() if self.last_update else None,
+            'learning_rate': self.learning_rate,
+            'window_size': self.window_size,
+        }
     
-    def save_model(self, model_name: str):
-        """Save online learning model"""
-        if model_name not in self.models:
-            raise ValueError(f"Model {model_name} not found")
-        
-        model_file = self.model_path / f"{model_name}.pkl"
-        
-        if self.use_river:
-            # River models can be pickled
-            with open(model_file, 'wb') as f:
-                pickle.dump(self.models[model_name], f)
-        else:
-            # scikit-learn models
-            with open(model_file, 'wb') as f:
-                pickle.dump(self.models[model_name], f)
-        
-        logger.info(f"Saved online model {model_name} to {model_file}")
-    
-    def load_model(self, model_name: str):
-        """Load online learning model"""
-        model_file = self.model_path / f"{model_name}.pkl"
-        
-        if not model_file.exists():
-            raise FileNotFoundError(f"Model {model_name} not found at {model_file}")
-        
-        with open(model_file, 'rb') as f:
-            model = pickle.load(f)
-        
-        self.models[model_name] = model
-        logger.info(f"Loaded online model {model_name}")
-    
-    def get_metrics(self, model_name: str) -> Dict:
-        """Get current model metrics"""
-        if model_name not in self.metrics:
-            return {}
-        
-        metric = self.metrics[model_name]
-        
-        if self.use_river:
-            return {
-                'accuracy': metric.get() if hasattr(metric, 'get') else 0.0
-            }
-        else:
-            return metric
-
-
-def main():
-    """Test online learning"""
-    learner = OnlineLearner()
-    
-    # Create synthetic data
-    np.random.seed(42)
-    X = np.random.randn(100, 10)
-    y = (X[:, 0] > 0).astype(int)
-    
-    # Train online
-    learner.train_online('test_model', X, y)
-    
-    # Predict
-    predictions = learner.predict_online('test_model', X[:10])
-    logger.info(f"Predictions: {predictions}")
-    
-    # Get metrics
-    metrics = learner.get_metrics('test_model')
-    logger.info(f"Metrics: {metrics}")
-
-
-if __name__ == "__main__":
-    main()
-
+    def reset(self) -> None:
+        """Reset the online learner state."""
+        self.sample_buffer = []
+        self.label_buffer = []
+        self.update_count = 0
+        self.last_update = None
+        self.metrics_history = []
+        logger.info("OnlineLearner reset")

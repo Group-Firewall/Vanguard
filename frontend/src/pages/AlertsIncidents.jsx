@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import api, { alertsAPI } from '../services/api'
+import useWebSocket from '../hooks/useWebSocket'
 import { format } from 'date-fns'
 import {
   Shield,
@@ -59,6 +60,26 @@ function AlertsIncidents() {
   const [exportPeriod, setExportPeriod] = useState('24h')
 
   const [openActionId, setOpenActionId] = useState(null)
+  
+  // Real-time updates via WebSocket
+  const handleWebSocketMessage = useCallback((message) => {
+    if (message.type === 'alert' && message.data) {
+      const newAlertRaw = message.data
+      setAlerts((prev) => {
+        // Prevent duplicate alerts if already loaded
+        if (prev.some(a => a.id === newAlertRaw.id)) return prev
+        
+        const enriched = {
+          ...newAlertRaw,
+          severity: calculateSeverity(newAlertRaw),
+          risk_score: calculateRiskScore(newAlertRaw)
+        }
+        return [enriched, ...prev]
+      })
+    }
+  }, [])
+
+  useWebSocket('/ws/alerts', handleWebSocketMessage)
 
   useEffect(() => {
     const handleClickOutside = (event) => {

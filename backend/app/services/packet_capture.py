@@ -190,7 +190,14 @@ class PacketCaptureService:
     # ------------------------------------------------------------------
 
     def _default_interface(self) -> Optional[str]:
-        """Return the first non-loopback interface, or the first available."""
+        """Return the default network interface."""
+        from scapy.config import conf
+        # On Windows, conf.iface is usually the most reliable way to get the
+        # primary active interface.
+        if conf.iface:
+             return str(conf.iface)
+             
+        # Fallback to manual search if conf.iface is somehow missing
         interfaces = get_if_list()
         for iface in interfaces:
             name_lower = iface.lower()
