@@ -1,5 +1,14 @@
 import React, { useState, createContext, useContext } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import {
+  LayoutDashboard,
+  AlertTriangle,
+  BarChart3,
+  ShieldAlert,
+  Cpu,
+  FileText,
+  Settings
+} from "lucide-react"
 
 const SidebarContext = createContext()
 
@@ -26,49 +35,49 @@ function Sidebar() {
     {
       id: 'dashboard',
       label: 'Dashboard',
-      icon: '🏠',
+      icon: LayoutDashboard,
       path: '/dashboard',
       description: 'Real-Time Network Status Overview'
     },
     {
       id: 'alerts',
       label: 'Alerts & Incidents',
-      icon: '🚨',
+      icon: AlertTriangle,
       path: '/alerts',
       description: 'Live Alerts & Incident Response'
     },
     {
       id: 'traffic',
       label: 'Traffic Monitoring',
-      icon: '📊',
+      icon: BarChart3,
       path: '/traffic',
       description: 'Live Traffic & Analytics'
     },
     {
       id: 'intelligence',
       label: 'Attack Intelligence',
-      icon: '🎯',
+      icon: ShieldAlert,
       path: '/intelligence',
       description: 'Threat Trends & Zero-Day Analysis'
     },
     {
       id: 'engines',
       label: 'Detection Engines',
-      icon: '⚙️',
+      icon: Cpu,
       path: '/engines',
       description: 'Hybrid Detection & ML Status'
     },
     {
       id: 'reports',
       label: 'Reports',
-      icon: '📄',
+      icon: FileText,
       path: '/reports',
       description: 'System Reports & Analytics'
     },
     {
       id: 'settings',
       label: 'Settings',
-      icon: '⚙️',
+      icon: Settings,
       path: '/settings',
       description: 'System Configuration'
     }
@@ -99,25 +108,38 @@ function Sidebar() {
 
       {/* Menu Items */}
       <nav className="mt-4">
-        {menuItems.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => navigate(item.path)}
-            className={`w-full flex items-center px-4 py-3 transition-all duration-200 ${isActive(item.path)
-                ? 'bg-blue-600 border-l-4 border-blue-400'
-                : 'hover:bg-gray-800 border-l-4 border-transparent'
-              }`}
-            title={!isOpen ? item.label : ''}
-          >
-            <span className="text-2xl mr-3">{item.icon}</span>
-            {isOpen && (
-              <div className="flex-1 text-left">
-                <div className="font-semibold">{item.label}</div>
-                <div className="text-xs text-gray-400 mt-0.5">{item.description}</div>
-              </div>
-            )}
-          </button>
-        ))}
+        {menuItems.map((item) => {
+          const Icon = item.icon
+
+          return (
+            <button
+              key={item.id}
+              onClick={() => navigate(item.path)}
+              className={`group w-full flex items-center px-4 py-3 transition-all duration-200 ${isActive(item.path)
+                  ? 'bg-blue-600 border-l-4 border-blue-400'
+                  : 'hover:bg-gray-800 border-l-4 border-transparent'
+                }`}
+              title={!isOpen ? item.label : ''}
+            >
+              <Icon
+                size={22}
+                className={`mr-3 transition-transform duration-200 ${isActive(item.path)
+                    ? "text-white scale-110"
+                    : "text-gray-400 group-hover:scale-110"
+                  }`}
+              />
+
+              {isOpen && (
+                <div className="flex-1 text-left">
+                  <div className="font-semibold">{item.label}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">
+                    {item.description}
+                  </div>
+                </div>
+              )}
+            </button>
+          )
+        })}
       </nav>
 
       {/* Footer */}
