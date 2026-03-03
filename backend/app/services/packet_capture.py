@@ -15,7 +15,7 @@ Design decisions
   pushed onto the shared asyncio.Queue via put_nowait().  If the queue is
   full, the packet is discarded with a warning rather than blocking.
 """
-
+import asyncio
 import logging
 import threading
 from datetime import datetime
@@ -42,6 +42,7 @@ class PacketCaptureService:
         self._interface: Optional[str] = None
         self._filter_str: Optional[str] = None
         self._lock = threading.Lock()
+        self._loop: Optional[asyncio.AbstractEventLoop] = None  # Store event loop for thread-safe queue access
 
     # ------------------------------------------------------------------
     # Public interface
@@ -71,6 +72,10 @@ class PacketCaptureService:
         self._dropped_count = 0
         self._start_time = datetime.now()
         self.is_capturing = True
+        
+        # Capture the running event loop BEFORE starting thread
+        # This is critical for thread-safe queue operations
+        self._loop = asyncio.get_running_loop()
 
         self._capture_thread = threading.Thread(
             target=self._capture_loop,
@@ -170,7 +175,10 @@ class PacketCaptureService:
             )
 
             try:
-                packet_stream.put_nowait(packet_data)
+                # Use the stored event loop reference for thread-safe queue access
+                # asyncio.Queue is NOT thread-safe, so we must schedule the put
+                # operation onto the event loop thread
+                self._loop.call_soon_threadsafe(packet_stream.put_nowait, packet_data)
                 with self._lock:
                     self._packet_count += 1
             except Exception:
