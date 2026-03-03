@@ -22,6 +22,8 @@ from fastapi import WebSocket
 
 logger = logging.getLogger(__name__)
 
+print("[DEBUG] broadcaster.py module loading", flush=True)
+
 
 class ChannelBroadcaster:
     """Manages all WebSocket connections for a single named channel."""
@@ -29,6 +31,7 @@ class ChannelBroadcaster:
     def __init__(self, channel_name: str) -> None:
         self.channel_name = channel_name
         self._connections: Set[WebSocket] = set()
+        print(f"[DEBUG] Created ChannelBroadcaster instance for '{channel_name}' at {id(self)}", flush=True)
 
     # ------------------------------------------------------------------
     # Connection lifecycle
@@ -36,6 +39,7 @@ class ChannelBroadcaster:
 
     async def connect(self, websocket: WebSocket) -> None:
         """Accept and register a new WebSocket client."""
+        print(f"[DEBUG] ChannelBroadcaster.connect called on {self.channel_name} instance {id(self)}", flush=True)
         await websocket.accept()
         self._connections.add(websocket)
         logger.info(
@@ -43,6 +47,7 @@ class ChannelBroadcaster:
             self.channel_name,
             len(self._connections),
         )
+        print(f"[BROADCASTER] {self.channel_name}: client connected, total={len(self._connections)}", flush=True)
 
     def disconnect(self, websocket: WebSocket) -> None:
         """Remove a WebSocket client (idempotent)."""
@@ -64,10 +69,13 @@ class ChannelBroadcaster:
         exceptions so the calling pipeline is never interrupted.
         """
         if not self._connections:
+            print(f"[BROADCASTER] {self.channel_name}: NO CLIENTS CONNECTED", flush=True)
             return
 
         message = json.dumps(payload)
         stale: list[WebSocket] = []
+        
+        print(f"[BROADCASTER] {self.channel_name}: broadcasting to {len(self._connections)} clients", flush=True)
 
         for ws in self._connections:
             try:
@@ -94,9 +102,13 @@ class ChannelBroadcaster:
 
 #: Raw, live packet feed → /ws/packets
 packet_broadcaster: ChannelBroadcaster = ChannelBroadcaster("packets")
+print(f"[DEBUG] Created packet_broadcaster instance {id(packet_broadcaster)}", flush=True)
 
 #: Intrusion alerts only → /ws/alerts
 alert_broadcaster: ChannelBroadcaster = ChannelBroadcaster("alerts")
+print(f"[DEBUG] Created alert_broadcaster instance {id(alert_broadcaster)}", flush=True)
 
 #: Periodic traffic statistics → /ws/metrics
 metrics_broadcaster: ChannelBroadcaster = ChannelBroadcaster("metrics")
+print(f"[DEBUG] Created metrics_broadcaster instance {id(metrics_broadcaster)}", flush=True)
+
