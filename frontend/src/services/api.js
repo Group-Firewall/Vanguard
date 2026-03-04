@@ -118,7 +118,10 @@ export const testDataAPI = {
 export const firewallAPI = {
   block: (ip) => api.post('/firewall/block', { ip }),
   unblock: (ip) => api.post('/firewall/unblock', { ip }),
+  whitelist: (ip) => api.post('/firewall/whitelist', { ip }),
   list: () => api.get('/firewall/list'),
+  check: (ip) => api.get(`/firewall/check/${ip}`),
+  blockIP: ({ ip, reason }) => api.post('/firewall/block', { ip, reason }),
 }
 
 export default api

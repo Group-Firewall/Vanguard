@@ -31,6 +31,7 @@ import {
   RotateCcw,
   Sliders
 } from 'lucide-react'
+import ConfirmDialog, { Toast } from '../components/ConfirmDialog'
 
 function DetectionEngines() {
   const [modelStatus, setModelStatus] = useState({
@@ -47,6 +48,16 @@ function DetectionEngines() {
   const [sensitivity, setSensitivity] = useState('Balanced')
   const [activityData, setActivityData] = useState([])
   const [isRestarting, setIsRestarting] = useState(false)
+  const [toast, setToast] = useState({
+    isVisible: false,
+    message: '',
+    type: 'info',
+  })
+
+  const showToast = (message, type = 'info') => {
+    setToast({ isVisible: true, message, type })
+    setTimeout(() => setToast(prev => ({ ...prev, isVisible: false })), 3000)
+  }
 
   // Real-time metrics updates via WebSocket
   const handleMetricsMessage = useCallback((message) => {
@@ -109,7 +120,7 @@ function DetectionEngines() {
     setIsRestarting(true)
     setTimeout(() => {
       setIsRestarting(false)
-      alert('Detection engine components restarted successfully.')
+      showToast('Detection engine components restarted successfully', 'success')
     }, 2000)
   }
 
@@ -327,6 +338,14 @@ function DetectionEngines() {
           </div>
         </div>
       </div>
+
+      {/* Toast Notifications */}
+      <Toast
+        isVisible={toast.isVisible}
+        message={toast.message}
+        type={toast.type}
+        onClose={() => setToast(prev => ({ ...prev, isVisible: false }))}
+      />
     </div>
   )
 }

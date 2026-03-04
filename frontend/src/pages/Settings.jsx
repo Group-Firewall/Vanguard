@@ -20,12 +20,33 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { testDataAPI, settingsAPI, authAPI } from '../services/api'
+import ConfirmDialog, { Toast } from '../components/ConfirmDialog'
 
 function Settings() {
   const { user } = useAuth()
   const [activeTab, setActiveTab] = useState('profile')
   const [isSaving, setIsSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState(null)
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'info',
+    confirmText: 'Confirm',
+    showCancel: true,
+    isLoading: false,
+    onConfirm: () => {},
+  })
+  const [toast, setToast] = useState({
+    isVisible: false,
+    message: '',
+    type: 'info',
+  })
+
+  const showToast = (message, type = 'info') => {
+    setToast({ isVisible: true, message, type })
+    setTimeout(() => setToast(prev => ({ ...prev, isVisible: false })), 3000)
+  }
 
   const [profile, setProfile] = useState({
     fullName: user?.full_name || '',
@@ -114,7 +135,7 @@ function Settings() {
         };
         if (profile.password) {
           if (profile.password !== profile.confirmPassword) {
-            alert("Passwords do not match!");
+            showToast("Passwords do not match!", 'error')
             setIsSaving(false);
             return;
           }
@@ -134,28 +155,52 @@ function Settings() {
 
       setSaveStatus('success')
       setLastSaved(new Date().toLocaleTimeString())
+      showToast('Settings saved successfully', 'success')
       setTimeout(() => setSaveStatus(null), 3000)
     } catch (error) {
       console.error('Error saving settings:', error);
-      alert('Failed to save settings: ' + (error.response?.data?.detail || error.message));
+      showToast('Failed to save settings: ' + (error.response?.data?.detail || error.message), 'error')
     } finally {
       setIsSaving(false)
     }
   }
 
   const handleRestartServices = () => {
-    if (window.confirm('Are you sure you want to restart all monitoring services? This will temporarily interrupt traffic analysis.')) {
-      alert('Services restarted successfully.')
-    }
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Restart Services',
+      message: 'Are you sure you want to restart all monitoring services? This will temporarily interrupt traffic analysis.',
+      type: 'warning',
+      confirmText: 'Restart',
+      showCancel: true,
+      isLoading: false,
+      onConfirm: () => {
+        showToast('Services restarted successfully', 'success')
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }))
+      },
+    })
   }
 
-  const handleGenerateTestData = async () => {
-    try {
-      await testDataAPI.create()
-      alert('Test data generated successfully! Refresh your dashboard to see the results.')
-    } catch (err) {
-      alert('Error generating test data.')
-    }
+  const handleGenerateTestData = () => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Generate Test Data',
+      message: 'Generate test data for dashboard testing? This will create sample alerts and metrics.',
+      type: 'info',
+      confirmText: 'Generate',
+      showCancel: true,
+      isLoading: false,
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isLoading: true }))
+        try {
+          await testDataAPI.create()
+          showToast('Test data generated successfully! Refresh your dashboard to see the results.', 'success')
+        } catch (err) {
+          showToast('Error generating test data', 'error')
+        }
+        setConfirmDialog(prev => ({ ...prev, isOpen: false, isLoading: false }))
+      },
+    })
   }
 
   const tabs = [
@@ -550,6 +595,27 @@ function Settings() {
           </div>
         </div>
       </div>
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        type={confirmDialog.type}
+        confirmText={confirmDialog.confirmText}
+        showCancel={confirmDialog.showCancel}
+        isLoading={confirmDialog.isLoading}
+        onConfirm={confirmDialog.onConfirm}
+        onClose={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+      />
+
+      {/* Toast Notifications */}
+      <Toast
+        isVisible={toast.isVisible}
+        message={toast.message}
+        type={toast.type}
+        onClose={() => setToast(prev => ({ ...prev, isVisible: false }))}
+      />
     </div>
   )
 }

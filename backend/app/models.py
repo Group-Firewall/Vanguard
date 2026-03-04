@@ -87,6 +87,7 @@ class User(Base):
     email = Column(String(100), unique=True, index=True)
     hashed_password = Column(String(255))
     full_name = Column(String(100))
+    role = Column(String(20), default="analyst")  # admin, analyst, viewer
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=False)
     created_at = Column(DateTime, default=func.now())

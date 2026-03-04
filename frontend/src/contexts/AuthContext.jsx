@@ -1,4 +1,4 @@
-import React, { createContext, useContext } from 'react';
+import React, { createContext, useContext, useCallback, useMemo } from 'react';
 import api from '../services/api';
 
 const AuthContext = createContext();
@@ -58,13 +58,53 @@ export const AuthProvider = ({ children }) => {
         return response.data;
     };
 
-    const logout = () => {
+    const logout = useCallback(() => {
         localStorage.removeItem('token');
         setUser(null);
-    };
+    }, []);
+
+    // Computed properties for role checks
+    const isAuthenticated = useMemo(() => !!user, [user]);
+    const isAdmin = useMemo(() => user?.role === 'admin', [user]);
+    const userRole = useMemo(() => user?.role || 'analyst', [user]);
+
+    // Role check helper
+    const hasRole = useCallback((role) => {
+        if (!user) return false;
+        if (Array.isArray(role)) return role.includes(user.role);
+        return user.role === role;
+    }, [user]);
+
+    // Permission check helper
+    const hasPermission = useCallback((permission) => {
+        if (!user) return false;
+        // Admin has all permissions
+        if (user.role === 'admin') return true;
+        // Check based on role hierarchy
+        const permissions = {
+            admin: ['read', 'write', 'delete', 'admin', 'settings'],
+            analyst: ['read', 'write'],
+            viewer: ['read'],
+        };
+        return permissions[user.role]?.includes(permission) || false;
+    }, [user]);
+
+    const value = useMemo(() => ({
+        user,
+        loading,
+        login,
+        logout,
+        register,
+        isAuthenticated,
+        isAdmin,
+        userRole,
+        hasRole,
+        hasPermission,
+        refreshUser: fetchCurrentUser,
+    }), [user, loading, logout, isAuthenticated, isAdmin, userRole, hasRole, hasPermission]);
 
     return (
-        <AuthContext.Provider value={{ user, loading, login, logout, register }}>
+        <AuthContext.Provider value={value}>
             {children}
         </AuthContext.Provider>
     );

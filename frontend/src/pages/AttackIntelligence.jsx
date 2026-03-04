@@ -37,6 +37,7 @@ import {
   Terminal,
   Server
 } from 'lucide-react'
+import ConfirmDialog, { Toast } from '../components/ConfirmDialog'
 
 function AttackIntelligence() {
   const [alerts, setAlerts] = useState([])
@@ -48,6 +49,26 @@ function AttackIntelligence() {
   const [selectedSource, setSelectedSource] = useState(null)
   const [pulseFeed, setPulseFeed] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'danger',
+    confirmText: 'Confirm',
+    showCancel: true,
+    isLoading: false,
+    onConfirm: () => {},
+  })
+  const [toast, setToast] = useState({
+    isVisible: false,
+    message: '',
+    type: 'info',
+  })
+
+  const showToast = (message, type = 'info') => {
+    setToast({ isVisible: true, message, type })
+    setTimeout(() => setToast(prev => ({ ...prev, isVisible: false })), 3000)
+  }
 
   // Real-time alert updates via WebSocket
   const handleAlertMessage = useCallback((message) => {
@@ -154,15 +175,26 @@ function AttackIntelligence() {
     }
   }
 
-  const handleBlockIP = async (ip) => {
-    if (window.confirm(`Are you sure you want to block ${ip} at the firewall level?`)) {
-      try {
-        await firewallAPI.blockIP({ ip, reason: 'Intelligence Source' })
-        alert(`${ip} blocked successfully.`)
-      } catch (err) {
-        alert('Failed to block IP.')
-      }
-    }
+  const handleBlockIP = (ip) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Block IP Address',
+      message: `Are you sure you want to block ${ip} at the firewall level? This will prevent all traffic from this source.`,
+      type: 'danger',
+      confirmText: 'Block IP',
+      showCancel: true,
+      isLoading: false,
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isLoading: true }))
+        try {
+          await firewallAPI.blockIP({ ip, reason: 'Intelligence Source' })
+          showToast(`${ip} blocked successfully`, 'success')
+        } catch (err) {
+          showToast('Failed to block IP', 'error')
+        }
+        setConfirmDialog(prev => ({ ...prev, isOpen: false, isLoading: false }))
+      },
+    })
   }
 
   const handleInvestigate = (source) => {
@@ -528,6 +560,27 @@ function AttackIntelligence() {
           </div>
         </div>
       )}
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        type={confirmDialog.type}
+        confirmText={confirmDialog.confirmText}
+        showCancel={confirmDialog.showCancel}
+        isLoading={confirmDialog.isLoading}
+        onConfirm={confirmDialog.onConfirm}
+        onClose={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+      />
+
+      {/* Toast Notifications */}
+      <Toast
+        isVisible={toast.isVisible}
+        message={toast.message}
+        type={toast.type}
+        onClose={() => setToast(prev => ({ ...prev, isVisible: false }))}
+      />
     </div>
   )
 }
