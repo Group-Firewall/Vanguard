@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { modelAPI, metricsAPI } from '../services/api'
+import useWebSocket from '../hooks/useWebSocket'
 import {
   BarChart,
   Bar,
@@ -34,18 +35,50 @@ import {
 function DetectionEngines() {
   const [modelStatus, setModelStatus] = useState({
     ml: 'Active',
-    capture: 'Active',
+    capture: 'Idle',
     stream: 'Connected'
   })
   const [performanceMetrics, setPerformanceMetrics] = useState({
-    totalPredictions: 45280,
-    intrusionsDetected: 124,
-    detectionRate: 98.4,
-    falsePositives: 12
+    totalPredictions: 0,
+    intrusionsDetected: 0,
+    detectionRate: 0,
+    falsePositives: 0
   })
   const [sensitivity, setSensitivity] = useState('Balanced')
   const [activityData, setActivityData] = useState([])
   const [isRestarting, setIsRestarting] = useState(false)
+
+  // Real-time metrics updates via WebSocket
+  const handleMetricsMessage = useCallback((message) => {
+    if (message.type === 'metrics' && message.data) {
+      const m = message.data
+      setPerformanceMetrics(prev => ({
+        totalPredictions: m.packets_processed || prev.totalPredictions,
+        intrusionsDetected: m.alerts_generated || prev.intrusionsDetected,
+        detectionRate: m.packets_processed > 0 
+          ? ((m.packets_processed - (m.alerts_generated || 0)) / m.packets_processed * 100).toFixed(1)
+          : prev.detectionRate,
+        falsePositives: prev.falsePositives
+      }))
+      setModelStatus(prev => ({
+        ...prev,
+        capture: m.packets_per_second > 0 ? 'Active' : 'Idle'
+      }))
+      
+      // Update activity chart
+      const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      setActivityData(prev => {
+        const newPoint = {
+          time,
+          predictions: m.packets_processed || 0,
+          threats: m.alerts_generated || 0
+        }
+        return [...prev, newPoint].slice(-20)
+      })
+    }
+  }, [])
+
+  useWebSocket('/ws/metrics', handleMetricsMessage)
 
   useEffect(() => {
     loadData()
@@ -53,18 +86,23 @@ function DetectionEngines() {
     return () => clearInterval(interval)
   }, [])
 
-  const loadData = () => {
-    // Generate dummy activity data
-    const data = []
-    const now = new Date()
-    for (let i = 20; i >= 0; i--) {
-      data.push({
-        time: new Date(now.getTime() - i * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        predictions: 80 + Math.floor(Math.random() * 40),
-        threats: Math.floor(Math.random() * 5)
-      })
+  const loadData = async () => {
+    try {
+      const response = await metricsAPI.get(1) // Get last 1 hour of metrics
+      if (response.data) {
+        const m = response.data
+        setPerformanceMetrics(prev => ({
+          totalPredictions: m.total_packets || prev.totalPredictions,
+          intrusionsDetected: m.total_alerts || prev.intrusionsDetected,
+          detectionRate: m.total_packets > 0 
+            ? ((m.total_packets - (m.total_alerts || 0)) / m.total_packets * 100).toFixed(1)
+            : prev.detectionRate,
+          falsePositives: prev.falsePositives
+        }))
+      }
+    } catch (error) {
+      console.error('Error loading metrics:', error)
     }
-    setActivityData(data)
   }
 
   const handleRestart = () => {

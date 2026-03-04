@@ -70,9 +70,20 @@ function CheckCircle(props) {
 // Main component
 // ---------------------------------------------------------------------------
 
+const STORAGE_KEY = 'vanguard_last_capture'
+
 function TrafficMonitoring() {
-  // Packet buffer displayed in the live table
-  const [packets, setPackets] = useState([])
+  // Packet buffer displayed in the live table - restore from localStorage
+  const [packets, setPackets] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        return parsed.packets || []
+      }
+    } catch (e) { /* ignore */ }
+    return []
+  })
 
   // Capture status state (moved from Dashboard)
   const [captureStatus, setCaptureStatus] = useState({
@@ -86,14 +97,49 @@ function TrafficMonitoring() {
   const [filterProtocol, setFilterProtocol] = useState('all')
   const [filterIntrusion, setFilterIntrusion] = useState('all')
 
-  // Derived visualisation data
-  const [trafficRate, setTrafficRate] = useState([])
+  // Derived visualisation data - restore from localStorage
+  const [trafficRate, setTrafficRate] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        return parsed.trafficRate || []
+      }
+    } catch (e) { /* ignore */ }
+    return []
+  })
   const [warnings, setWarnings] = useState([])
-  const [liveMetrics, setLiveMetrics] = useState(null)
+  const [liveMetrics, setLiveMetrics] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        return parsed.liveMetrics || null
+      }
+    } catch (e) { /* ignore */ }
+    return null
+  })
 
   // Ref-based pause flag avoids re-subscribing to WebSocket on toggle
   const isPausedRef = useRef(false)
   isPausedRef.current = isPaused
+
+  // Save capture data to localStorage when it changes (debounced)
+  React.useEffect(() => {
+    const saveTimeout = setTimeout(() => {
+      if (packets.length > 0 || liveMetrics) {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            packets: packets.slice(0, 50), // Save last 50 packets to avoid storage limits
+            trafficRate: trafficRate.slice(-20),
+            liveMetrics,
+            savedAt: new Date().toISOString()
+          }))
+        } catch (e) { /* ignore storage errors */ }
+      }
+    }, 1000) // Debounce saves
+    return () => clearTimeout(saveTimeout)
+  }, [packets, trafficRate, liveMetrics])
 
   // ------------------------------------------------------------------
   // Capture Status Management (Moved from Dashboard)
@@ -117,6 +163,12 @@ function TrafficMonitoring() {
   const handleStartCapture = async () => {
     try {
       await captureAPI.start()
+      // Clear previous capture data for fresh start
+      setPackets([])
+      setTrafficRate([])
+      setWarnings([])
+      setLiveMetrics(null)
+      localStorage.removeItem(STORAGE_KEY)
       // Optimistic update
       setCaptureStatus(prev => ({ ...prev, is_capturing: true }))
     } catch (err) {

@@ -1,4 +1,5 @@
 """API routes for Vanguard NIDS"""
+import logging
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
@@ -15,6 +16,8 @@ from app.services.report_service import generate_capture_report
 from app import schemas, models
 from app.models import Alert, Metric, ModelPerformance
 from app.workers.background_tasks import start_pipeline, stop_pipeline, get_pipeline
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -94,7 +97,7 @@ async def stop_capture(db: Session = Depends(get_db)):
         try:
             generate_capture_report(db)
         except Exception as report_err:
-            print(f"Error generating capture report: {report_err}")
+            logger.warning(f"Error generating capture report: {report_err}")
 
         return schemas.CaptureStatusResponse(
             is_capturing=False,

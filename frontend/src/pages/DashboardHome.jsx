@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   captureAPI,
@@ -58,29 +58,44 @@ function DashboardHome() {
     load: 'Low'
   })
   const [trafficHistory, setTrafficHistory] = useState([])
-  const ws = useRef(null)
 
   useEffect(() => {
     loadDashboardData()
     const interval = setInterval(loadDashboardData, 30000)
 
-    // WebSocket for live traffic mini-feed
+    // WebSocket for live traffic mini-feed (subscribe to packets for traffic visualization)
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.hostname}:8000/ws/alerts`
-    ws.current = new WebSocket(wsUrl)
+    const wsPacketsUrl = `${protocol}//${window.location.hostname}:8000/ws/packets`
+    const wsAlertsUrl = `${protocol}//${window.location.hostname}:8000/ws/alerts`
+    
+    const wsPackets = new WebSocket(wsPacketsUrl)
+    const wsAlerts = new WebSocket(wsAlertsUrl)
 
-    ws.current.onmessage = (event) => {
-      const message = JSON.parse(event.data)
-      if (message.type === 'packet') {
-        const newPacket = message.data
-        setLiveTraffic(prev => [newPacket, ...prev].slice(0, 5))
-        updateTrafficHistory(newPacket)
-      }
+    wsPackets.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data)
+        if (message.type === 'packet') {
+          const newPacket = message.data
+          setLiveTraffic(prev => [newPacket, ...prev].slice(0, 5))
+          updateTrafficHistory(newPacket)
+        }
+      } catch (e) { /* ignore parse errors */ }
+    }
+
+    wsAlerts.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data)
+        if (message.type === 'alert') {
+          // Refresh alerts when new one arrives
+          loadDashboardData()
+        }
+      } catch (e) { /* ignore parse errors */ }
     }
 
     return () => {
       clearInterval(interval)
-      if (ws.current) ws.current.close()
+      wsPackets.close()
+      wsAlerts.close()
     }
   }, [])
 
