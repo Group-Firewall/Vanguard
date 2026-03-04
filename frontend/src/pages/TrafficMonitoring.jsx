@@ -15,12 +15,14 @@
 import React, { useState, useMemo, useRef, useCallback } from 'react'
 import { metricsAPI, firewallAPI, captureAPI } from '../services/api'
 import useWebSocket from '../hooks/useWebSocket'
+import ConfirmDialog, { Toast } from '../components/ConfirmDialog'
 import {
   AreaChart, Area, XAxis, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import {
   Shield, Activity, Search, Pause, Play, Download,
   Zap, AlertCircle, Clock, Globe, Database, Terminal, Server,
+  ChevronDown, Lock, CheckCircle, Eye, Ban, FileText, ArrowRight,
 } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
@@ -45,34 +47,24 @@ function protocolBadgeClass(protocol) {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function ArrowRight(props) {
-  return (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
-      fill="none" stroke="currentColor" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round">
-      <path d="M5 12h14" /><path d="m12 5 7 7-7 7" />
-    </svg>
-  )
-}
-
-function CheckCircle(props) {
-  return (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
-      fill="none" stroke="currentColor" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round">
-      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-      <polyline points="22 4 12 14.01 9 11.01" />
-    </svg>
-  )
-}
-
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
+const STORAGE_KEY = 'vanguard_last_capture'
+
 function TrafficMonitoring() {
-  // Packet buffer displayed in the live table
-  const [packets, setPackets] = useState([])
+  // Packet buffer displayed in the live table - restore from localStorage
+  const [packets, setPackets] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        return parsed.packets || []
+      }
+    } catch (e) { /* ignore */ }
+    return []
+  })
 
   // Capture status state (moved from Dashboard)
   const [captureStatus, setCaptureStatus] = useState({
@@ -86,14 +78,67 @@ function TrafficMonitoring() {
   const [filterProtocol, setFilterProtocol] = useState('all')
   const [filterIntrusion, setFilterIntrusion] = useState('all')
 
-  // Derived visualisation data
-  const [trafficRate, setTrafficRate] = useState([])
+  // Derived visualisation data - restore from localStorage
+  const [trafficRate, setTrafficRate] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        return parsed.trafficRate || []
+      }
+    } catch (e) { /* ignore */ }
+    return []
+  })
   const [warnings, setWarnings] = useState([])
-  const [liveMetrics, setLiveMetrics] = useState(null)
+  const [liveMetrics, setLiveMetrics] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        return parsed.liveMetrics || null
+      }
+    } catch (e) { /* ignore */ }
+    return null
+  })
 
   // Ref-based pause flag avoids re-subscribing to WebSocket on toggle
   const isPausedRef = useRef(false)
   isPausedRef.current = isPaused
+
+  // Action menu and dialogs state
+  const [openActionId, setOpenActionId] = useState(null)
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'info',
+    confirmText: 'Confirm',
+    onConfirm: () => {},
+    isLoading: false,
+  })
+  const [toast, setToast] = useState({ isVisible: false, message: '', type: 'success' })
+
+  // Show toast notification
+  const showToast = (message, type = 'success') => {
+    setToast({ isVisible: true, message, type })
+  }
+
+  // Save capture data to localStorage when it changes (debounced)
+  React.useEffect(() => {
+    const saveTimeout = setTimeout(() => {
+      if (packets.length > 0 || liveMetrics) {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            packets: packets.slice(0, 50), // Save last 50 packets to avoid storage limits
+            trafficRate: trafficRate.slice(-20),
+            liveMetrics,
+            savedAt: new Date().toISOString()
+          }))
+        } catch (e) { /* ignore storage errors */ }
+      }
+    }, 1000) // Debounce saves
+    return () => clearTimeout(saveTimeout)
+  }, [packets, trafficRate, liveMetrics])
 
   // ------------------------------------------------------------------
   // Capture Status Management (Moved from Dashboard)
@@ -117,21 +162,40 @@ function TrafficMonitoring() {
   const handleStartCapture = async () => {
     try {
       await captureAPI.start()
+      // Clear previous capture data for fresh start
+      setPackets([])
+      setTrafficRate([])
+      setWarnings([])
+      setLiveMetrics(null)
+      localStorage.removeItem(STORAGE_KEY)
       // Optimistic update
       setCaptureStatus(prev => ({ ...prev, is_capturing: true }))
+      showToast('Packet capture started successfully', 'success')
     } catch (err) {
-      alert(`Failed to start capture: ${err.message}`)
+      showToast(`Failed to start capture: ${err.message}`, 'error')
     }
   }
 
   const handleStopCapture = async () => {
-    try {
-      await captureAPI.stop()
-      // Optimistic update
-      setCaptureStatus(prev => ({ ...prev, is_capturing: false }))
-    } catch (err) {
-      alert(`Failed to stop capture: ${err.message}`)
-    }
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Stop Capture',
+      message: 'Are you sure you want to stop the packet capture? Current session data will be preserved.',
+      type: 'warning',
+      confirmText: 'Stop Capture',
+      isLoading: false,
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isLoading: true }))
+        try {
+          await captureAPI.stop()
+          setCaptureStatus(prev => ({ ...prev, is_capturing: false }))
+          showToast('Packet capture stopped successfully', 'success')
+        } catch (err) {
+          showToast(`Failed to stop capture: ${err.message}`, 'error')
+        }
+        setConfirmDialog(prev => ({ ...prev, isOpen: false, isLoading: false }))
+      },
+    })
   }
 
   // ------------------------------------------------------------------
@@ -197,17 +261,85 @@ function TrafficMonitoring() {
   useWebSocket('/ws/metrics', handleMetricsMessage)
 
   // ------------------------------------------------------------------
-  // Firewall action
+  // Packet Actions
   // ------------------------------------------------------------------
 
-  const handleBlockIP = async (ip) => {
-    try {
-      await firewallAPI.block(ip)
-      alert(`IP ${ip} has been blocked at the firewall level.`)
-    } catch {
-      alert('Failed to block IP. Check the console for details.')
-    }
+  const handleBlockIP = (ip) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Block IP Address',
+      message: `Are you sure you want to block IP address ${ip}? This will prevent all traffic from this source.`,
+      type: 'danger',
+      confirmText: 'Block IP',
+      isLoading: false,
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isLoading: true }))
+        try {
+          await firewallAPI.block(ip)
+          showToast(`IP ${ip} has been blocked successfully`, 'success')
+        } catch (err) {
+          showToast('Failed to block IP. Check the console for details.', 'error')
+        }
+        setConfirmDialog(prev => ({ ...prev, isOpen: false, isLoading: false }))
+        setOpenActionId(null)
+      },
+    })
   }
+
+  const handleWhitelistIP = (ip) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Whitelist IP Address',
+      message: `Add ${ip} to the whitelist? Traffic from this IP will not be flagged as suspicious.`,
+      type: 'success',
+      confirmText: 'Whitelist',
+      isLoading: false,
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isLoading: true }))
+        try {
+          await firewallAPI.whitelist(ip)
+          showToast(`IP ${ip} has been whitelisted`, 'success')
+        } catch (err) {
+          showToast('Failed to whitelist IP', 'error')
+        }
+        setConfirmDialog(prev => ({ ...prev, isOpen: false, isLoading: false }))
+        setOpenActionId(null)
+      },
+    })
+  }
+
+  const handleInspectPacket = (packet) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Packet Details',
+      message: `Source: ${packet.src_ip}:${packet.src_port || '-'}\nDestination: ${packet.dst_ip}:${packet.dst_port || '-'}\nProtocol: ${packet.protocol}\nSize: ${packet.packet_size} bytes\nThreat: ${packet.is_intrusion ? packet.scan_type : 'None'}`,
+      type: 'info',
+      confirmText: 'Close',
+      showCancel: false,
+      onConfirm: () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }))
+        setOpenActionId(null)
+      },
+    })
+  }
+
+  const handleLogPacket = (packet) => {
+    // Export single packet to clipboard as JSON
+    navigator.clipboard.writeText(JSON.stringify(packet, null, 2))
+    showToast('Packet data copied to clipboard', 'info')
+    setOpenActionId(null)
+  }
+
+  // Close action menu when clicking outside
+  React.useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (!event.target.closest('.action-menu-container')) {
+        setOpenActionId(null)
+      }
+    }
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [])
 
   // ------------------------------------------------------------------
   // Derived analytics from the current packet buffer
@@ -544,16 +676,45 @@ function TrafficMonitoring() {
                         )}
                       </td>
                       <td className="px-6 py-3 whitespace-nowrap text-right">
-                        <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="relative action-menu-container">
                           <button
-                            onClick={() => handleBlockIP(p.src_ip)}
-                            className="p-1 px-2 text-[9px] font-bold bg-white border border-gray-200 rounded text-gray-600 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all uppercase"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setOpenActionId(openActionId === (p.id || i) ? null : (p.id || i))
+                            }}
+                            className="p-1.5 px-3 text-[10px] font-bold bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-all flex items-center gap-1"
                           >
-                            Block
+                            Actions <ChevronDown className={`w-3 h-3 transition-transform ${openActionId === (p.id || i) ? 'rotate-180' : ''}`} />
                           </button>
-                          <button className="p-1 px-2 text-[9px] font-bold bg-white border border-gray-200 rounded text-gray-600 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all uppercase">
-                            Inspect
-                          </button>
+                          
+                          {openActionId === (p.id || i) && (
+                            <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-50">
+                              <button
+                                onClick={() => handleInspectPacket(p)}
+                                className="w-full px-3 py-2 text-left text-xs font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-2"
+                              >
+                                <Eye className="w-3.5 h-3.5" /> View Details
+                              </button>
+                              <button
+                                onClick={() => handleBlockIP(p.src_ip)}
+                                className="w-full px-3 py-2 text-left text-xs font-medium text-gray-700 hover:bg-red-50 hover:text-red-600 flex items-center gap-2"
+                              >
+                                <Ban className="w-3.5 h-3.5" /> Block Source IP
+                              </button>
+                              <button
+                                onClick={() => handleWhitelistIP(p.src_ip)}
+                                className="w-full px-3 py-2 text-left text-xs font-medium text-gray-700 hover:bg-green-50 hover:text-green-600 flex items-center gap-2"
+                              >
+                                <CheckCircle className="w-3.5 h-3.5" /> Whitelist IP
+                              </button>
+                              <button
+                                onClick={() => handleLogPacket(p)}
+                                className="w-full px-3 py-2 text-left text-xs font-medium text-gray-700 hover:bg-purple-50 hover:text-purple-600 flex items-center gap-2"
+                              >
+                                <FileText className="w-3.5 h-3.5" /> Copy to Clipboard
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -650,6 +811,27 @@ function TrafficMonitoring() {
           </div>
         </div>
       </div>
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        type={confirmDialog.type}
+        confirmText={confirmDialog.confirmText}
+        showCancel={confirmDialog.showCancel}
+        isLoading={confirmDialog.isLoading}
+        onConfirm={confirmDialog.onConfirm}
+        onClose={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+      />
+
+      {/* Toast Notifications */}
+      <Toast
+        isVisible={toast.isVisible}
+        message={toast.message}
+        type={toast.type}
+        onClose={() => setToast(prev => ({ ...prev, isVisible: false }))}
+      />
     </div>
   )
 }

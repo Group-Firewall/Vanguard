@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import api, { alertsAPI } from '../services/api'
 import useWebSocket from '../hooks/useWebSocket'
 import { format } from 'date-fns'
+import ConfirmDialog, { Toast } from '../components/ConfirmDialog'
 import {
   Shield,
   Activity,
@@ -21,7 +22,8 @@ import {
   ChevronDown,
   Clock,
   Globe,
-  Server
+  Server,
+  Ban
 } from 'lucide-react'
 
 // Severity Logic Helper
@@ -60,6 +62,26 @@ function AlertsIncidents() {
   const [exportPeriod, setExportPeriod] = useState('24h')
 
   const [openActionId, setOpenActionId] = useState(null)
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'danger',
+    confirmText: 'Confirm',
+    showCancel: true,
+    isLoading: false,
+    onConfirm: () => {},
+  })
+  const [toast, setToast] = useState({
+    isVisible: false,
+    message: '',
+    type: 'info',
+  })
+
+  const showToast = (message, type = 'info') => {
+    setToast({ isVisible: true, message, type })
+    setTimeout(() => setToast(prev => ({ ...prev, isVisible: false })), 3000)
+  }
   
   // Real-time updates via WebSocket
   const handleWebSocketMessage = useCallback((message) => {
@@ -163,46 +185,96 @@ function AlertsIncidents() {
     document.body.removeChild(link);
   };
 
-  const handleBlockIP = async (ip) => {
-    if (window.confirm(`Are you sure you want to block IP: ${ip}?`)) {
-      try {
-        await api.post('/firewall/block-ip', { ip });
-        alert(`IP ${ip} has been blocked successfully.`);
-      } catch (error) {
-        console.error('Error blocking IP:', error);
-        alert('Failed to block IP.');
-      }
-    }
-  };
+  const handleBlockIP = (ip) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Block IP Address',
+      message: `Are you sure you want to block IP: ${ip}? This will prevent all traffic from this source.`,
+      type: 'danger',
+      confirmText: 'Block IP',
+      showCancel: true,
+      isLoading: false,
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isLoading: true }))
+        try {
+          await api.post('/firewall/block-ip', { ip })
+          showToast(`IP ${ip} has been blocked successfully`, 'success')
+        } catch (error) {
+          console.error('Error blocking IP:', error)
+          showToast('Failed to block IP', 'error')
+        }
+        setConfirmDialog(prev => ({ ...prev, isOpen: false, isLoading: false }))
+        setOpenActionId(null)
+      },
+    })
+  }
 
-  const handleResolve = async (id) => {
-    try {
-      await alertsAPI.resolve(id);
-      loadAlerts();
-      alert('Alert marked as resolved.');
-    } catch (error) {
-      console.error('Error resolving alert:', error);
-      alert('Failed to resolve alert.');
-    }
-  };
+  const handleResolve = (id) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Resolve Alert',
+      message: 'Mark this alert as resolved? This indicates the threat has been addressed.',
+      type: 'success',
+      confirmText: 'Resolve',
+      showCancel: true,
+      isLoading: false,
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isLoading: true }))
+        try {
+          await alertsAPI.resolve(id)
+          loadAlerts()
+          showToast('Alert marked as resolved', 'success')
+        } catch (error) {
+          console.error('Error resolving alert:', error)
+          showToast('Failed to resolve alert', 'error')
+        }
+        setConfirmDialog(prev => ({ ...prev, isOpen: false, isLoading: false }))
+        setOpenActionId(null)
+      },
+    })
+  }
 
-  const handleEscalate = async (id) => {
-    try {
-      await api.post(`/alerts/${id}/escalate`);
-      loadAlerts();
-      alert('Alert escalated to High severity.');
-    } catch (error) {
-      console.error('Error escalating alert:', error);
-      alert('Failed to escalate alert.');
-    }
-  };
+  const handleEscalate = (id) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Escalate Alert',
+      message: 'Escalate this alert to High severity? This will flag it for immediate attention.',
+      type: 'warning',
+      confirmText: 'Escalate',
+      showCancel: true,
+      isLoading: false,
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isLoading: true }))
+        try {
+          await api.post(`/alerts/${id}/escalate`)
+          loadAlerts()
+          showToast('Alert escalated to High severity', 'warning')
+        } catch (error) {
+          console.error('Error escalating alert:', error)
+          showToast('Failed to escalate alert', 'error')
+        }
+        setConfirmDialog(prev => ({ ...prev, isOpen: false, isLoading: false }))
+        setOpenActionId(null)
+      },
+    })
+  }
 
   const handleIgnore = (id) => {
-    if (window.confirm('Mark this alert as False Positive and ignore?')) {
-      alert('Alert ignored.');
-      // Optionally implementation for ignoring
-    }
-  };
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Ignore Alert',
+      message: 'Mark this alert as a False Positive and ignore? This will remove it from active monitoring.',
+      type: 'info',
+      confirmText: 'Ignore',
+      showCancel: true,
+      isLoading: false,
+      onConfirm: () => {
+        showToast('Alert marked as false positive', 'info')
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }))
+        setOpenActionId(null)
+      },
+    })
+  }
 
   const handleRowClick = (alert) => {
     setSelectedAlert(alert);
@@ -384,14 +456,33 @@ function AlertsIncidents() {
                       </span>
                     ) : (
                       <span className="flex items-center gap-1.5 text-green-600 font-bold text-xs ring-1 ring-green-500/20 px-2 py-1 rounded bg-green-50 w-fit uppercase">
-                        <CheckCircle className="w-3 h-3" /> Normal
+                        <CheckCircle className="w-3 h-3" /> Not Intrusion
                       </span>
                     )}
                   </td>
                   <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                    {alert.scan_type === 'Normal' ? 'Normal attack' :
-                      alert.scan_type === 'Bot' ? 'BotAttack' :
-                        alert.scan_type === 'Port_Scan' ? 'Port Scan' : 'Other Attack'}
+                    {(() => {
+                      const type = alert.scan_type || 'Normal'
+                      const typeMap = {
+                        'Normal': 'Normal Traffic',
+                        'Port_Scan': 'Port Scan Attack',
+                        'Port Scan': 'Port Scan Attack',
+                        'Sequential Port Scan': 'Sequential Port Scan',
+                        'SYN Scan': 'SYN Port Scan',
+                        'Bot': 'Bot Attack',
+                        'ICMP Flood': 'ICMP Flood (DoS)',
+                        'SYN Flood': 'SYN Flood (DoS)',
+                        'UDP Flood': 'UDP Flood (DoS)',
+                        'Brute Force Attempt': 'Brute Force Attack',
+                        'Database Attack': 'Database Attack',
+                        'Zero-Day/Novel Attack': 'Zero-Day Attack',
+                        'Malicious Traffic': 'Malicious Traffic',
+                        'Telnet Access': 'Telnet Access',
+                        'SSH Brute Force Port': 'SSH Brute Force',
+                        'Database Port Access': 'Database Port Access',
+                      }
+                      return typeMap[type] || type
+                    })()}
                   </td>
                   <td className="px-6 py-4 font-mono text-sm text-blue-600">
                     {alert.source_ip}
@@ -593,7 +684,10 @@ function AlertsIncidents() {
               <div className="space-y-4 pt-4">
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Security Response</h4>
                 <div className="grid grid-cols-2 gap-3">
-                  <button className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-lg text-sm font-bold transition-all shadow-lg shadow-red-100">
+                  <button 
+                    onClick={() => handleBlockIP(selectedAlert.source_ip)}
+                    className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-lg text-sm font-bold transition-all shadow-lg shadow-red-100"
+                  >
                     <Lock className="w-4 h-4" /> Block IP
                   </button>
                   <button className="flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2.5 rounded-lg text-sm font-bold transition-all">
@@ -603,7 +697,7 @@ function AlertsIncidents() {
                 <div className="grid grid-cols-1 gap-3">
                   <button
                     onClick={() => {
-                      alert('Incident marked as resolved')
+                      handleResolve(selectedAlert.id)
                       setIsDrawerOpen(false)
                     }}
                     className="flex items-center justify-center gap-2 border border-gray-200 hover:border-gray-300 text-gray-600 py-2.5 rounded-lg text-sm font-medium transition-all"
@@ -634,6 +728,27 @@ function AlertsIncidents() {
           className="fixed inset-0 bg-black/60 backdrop-blur-[2px] z-40 transition-all duration-300"
         />
       )}
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        type={confirmDialog.type}
+        confirmText={confirmDialog.confirmText}
+        showCancel={confirmDialog.showCancel}
+        isLoading={confirmDialog.isLoading}
+        onConfirm={confirmDialog.onConfirm}
+        onClose={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+      />
+
+      {/* Toast Notifications */}
+      <Toast
+        isVisible={toast.isVisible}
+        message={toast.message}
+        type={toast.type}
+        onClose={() => setToast(prev => ({ ...prev, isVisible: false }))}
+      />
     </div>
   )
 }

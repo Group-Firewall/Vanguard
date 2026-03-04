@@ -21,7 +21,7 @@ import threading
 from datetime import datetime
 from typing import Optional
 
-from scapy.all import sniff, get_if_list
+from scapy.all import sniff, get_if_list, IFACES
 from scapy.layers.inet import IP, TCP, UDP
 
 from app.core.stream import PacketData, packet_stream
@@ -124,6 +124,7 @@ class PacketCaptureService:
 
     def _capture_loop(self, interface: str, filter_str: str) -> None:
         """Run Scapy sniff on the chosen interface (blocking, OS thread)."""
+        logger.debug("Capture thread started on %s with filter '%s'", interface, filter_str)
         try:
             sniff(
                 iface=interface,
@@ -131,6 +132,7 @@ class PacketCaptureService:
                 prn=self.enqueue_packet,
                 stop_filter=lambda _pkt: not self.is_capturing,
             )
+            logger.debug("Sniff() returned normally")
         except Exception as exc:
             logger.error("Capture loop error: %s", exc)
 
@@ -198,17 +200,41 @@ class PacketCaptureService:
     # ------------------------------------------------------------------
 
     def _default_interface(self) -> Optional[str]:
-        """Return the default network interface."""
-        from scapy.config import conf
-        # On Windows, conf.iface is usually the most reliable way to get the
-        # primary active interface.
-        if conf.iface:
-             return str(conf.iface)
-             
-        # Fallback to manual search if conf.iface is somehow missing
+        """Return the default network interface.
+        
+        On Windows, we prefer the friendly name (e.g., 'Wi-Fi', 'Ethernet')
+        over the raw NPF device path for better compatibility.
+        """
+        try:
+            # Priority order: Wi-Fi > Ethernet > Others
+            # Most users are connected via Wi-Fi these days
+            priority_keywords = ['wi-fi', 'wifi', 'wireless', 'ethernet', 'eth']
+            
+            # First pass: look for interfaces matching priority keywords
+            for keyword in priority_keywords:
+                for iface in IFACES.values():
+                    name_lower = iface.name.lower() if iface.name else ""
+                    desc_lower = iface.description.lower() if iface.description else ""
+                    
+                    # Skip loopback, virtual adapters, and Bluetooth
+                    if any(skip in desc_lower for skip in ['loopback', 'virtual', 'bluetooth', 'wan miniport']):
+                        continue
+                    
+                    if keyword in name_lower or keyword in desc_lower:
+                        logger.info(f"Auto-detected interface: {iface.name} ({iface.description})")
+                        return iface.name
+            
+            # Fallback: use Scapy's default
+            from scapy.config import conf
+            if conf.iface:
+                return str(conf.iface)
+                
+        except Exception as e:
+            logger.warning(f"Error detecting interface: {e}")
+        
+        # Last resort: return first non-loopback interface
         interfaces = get_if_list()
         for iface in interfaces:
-            name_lower = iface.lower()
-            if "lo" not in name_lower and "loopback" not in name_lower:
+            if "loopback" not in iface.lower():
                 return iface
         return interfaces[0] if interfaces else None

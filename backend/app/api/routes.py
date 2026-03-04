@@ -1,4 +1,5 @@
 """API routes for Vanguard NIDS"""
+import logging
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
@@ -15,6 +16,15 @@ from app.services.report_service import generate_capture_report
 from app import schemas, models
 from app.models import Alert, Metric, ModelPerformance
 from app.workers.background_tasks import start_pipeline, stop_pipeline, get_pipeline
+from app.security import (
+    get_current_user, 
+    get_current_active_user,
+    get_current_admin_user,
+    RoleChecker,
+    PermissionChecker
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -28,13 +38,16 @@ model_service = ModelService()
 @router.post("/capture/start", response_model=schemas.CaptureStatusResponse)
 async def start_capture(
     request: schemas.CaptureStartRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(PermissionChecker("capture"))
 ):
     """Start live packet capture and the ML processing pipeline.
 
     The capture service enqueues packets into the in-memory stream;
     the processing pipeline consumes them in batches for ML detection.
     No DB writes happen during capture — only alerts are persisted.
+    
+    Requires 'capture' permission (analyst or admin).
     """
     try:
         if capture_service.is_capturing:
@@ -62,11 +75,16 @@ async def start_capture(
 
 
 @router.post("/capture/stop", response_model=schemas.CaptureStatusResponse)
-async def stop_capture(db: Session = Depends(get_db)):
+async def stop_capture(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(PermissionChecker("capture"))
+):
     """Stop packet capture and the processing pipeline.
 
     Saves an aggregate metrics record to DB for historical reporting,
     then generates a capture report on disk.
+    
+    Requires 'capture' permission (analyst or admin).
     """
     try:
         capture_service.stop_capture()
@@ -94,7 +112,7 @@ async def stop_capture(db: Session = Depends(get_db)):
         try:
             generate_capture_report(db)
         except Exception as report_err:
-            print(f"Error generating capture report: {report_err}")
+            logger.warning(f"Error generating capture report: {report_err}")
 
         return schemas.CaptureStatusResponse(
             is_capturing=False,
@@ -107,7 +125,9 @@ async def stop_capture(db: Session = Depends(get_db)):
 
 
 @router.get("/capture/status", response_model=schemas.CaptureStatusResponse)
-async def get_capture_status():
+async def get_capture_status(
+    current_user: models.User = Depends(get_current_active_user)
+):
     """Get current capture status"""
     return schemas.CaptureStatusResponse(
         is_capturing=capture_service.is_capturing,
@@ -120,9 +140,10 @@ async def get_capture_status():
 @router.post("/alert", response_model=schemas.AlertResponse)
 async def create_alert(
     alert: schemas.AlertCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(PermissionChecker("write"))
 ):
-    """Create a new alert"""
+    """Create a new alert (requires write permission)"""
     try:
         # Convert schema to dict for detection result format
         detection_result = {
@@ -148,9 +169,10 @@ async def get_alerts(
     resolved: Optional[bool] = None,
     limit: int = 100,
     offset: int = 0,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
 ):
-    """Get alerts with optional filtering"""
+    """Get alerts with optional filtering (requires authentication)"""
     query = db.query(Alert)
     
     if severity:
@@ -163,8 +185,12 @@ async def get_alerts(
 
 
 @router.get("/alerts/{alert_id}", response_model=schemas.AlertResponse)
-async def get_alert(alert_id: int, db: Session = Depends(get_db)):
-    """Get a specific alert"""
+async def get_alert(
+    alert_id: int, 
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """Get a specific alert (requires authentication)"""
     alert = db.query(Alert).filter(Alert.id == alert_id).first()
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
@@ -172,8 +198,12 @@ async def get_alert(alert_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/alerts/{alert_id}/resolve")
-async def resolve_alert(alert_id: int, db: Session = Depends(get_db)):
-    """Mark an alert as resolved"""
+async def resolve_alert(
+    alert_id: int, 
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(PermissionChecker("write"))
+):
+    """Mark an alert as resolved (requires write permission)"""
     alert = db.query(Alert).filter(Alert.id == alert_id).first()
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
@@ -187,9 +217,10 @@ async def resolve_alert(alert_id: int, db: Session = Depends(get_db)):
 @router.get("/metrics", response_model=schemas.MetricsResponse)
 async def get_metrics(
     hours: int = 1,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
 ):
-    """Get system metrics"""
+    """Get system metrics (requires authentication)"""
     try:
         since = datetime.now() - timedelta(hours=hours)
         
