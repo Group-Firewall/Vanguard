@@ -185,14 +185,13 @@ function AttackIntelligence() {
       showCancel: true,
       isLoading: false,
       onConfirm: async () => {
-        setConfirmDialog(prev => ({ ...prev, isLoading: true }))
+        setConfirmDialog(prev => ({ ...prev, isOpen: false })) // Close immediately
         try {
           await firewallAPI.blockIP({ ip, reason: 'Intelligence Source' })
           showToast(`${ip} blocked successfully`, 'success')
         } catch (err) {
           showToast('Failed to block IP', 'error')
         }
-        setConfirmDialog(prev => ({ ...prev, isOpen: false, isLoading: false }))
       },
     })
   }

@@ -28,12 +28,17 @@ import {
 
 // Severity Logic Helper
 const calculateSeverity = (alert) => {
-  const isIntrusion = alert.intrusion === 1 || alert.ml_prediction === 1;
-  const payloadSize = alert.payload_size || 0;
-  const scanType = alert.scan_type || '';
+  // Use actual alert fields from the API response
+  const isIntrusion = alert.ml_prediction > 0.5 || alert.threat_score > 0.5;
+  const alertType = alert.alert_type || '';
 
-  if (isIntrusion && (payloadSize > 10000 || scanType.toLowerCase().includes('exploit'))) return 'High';
-  if (isIntrusion && scanType.toLowerCase().includes('scan')) return 'Medium';
+  // Return the severity from the alert if it exists and looks valid
+  if (alert.severity && ['High', 'Medium', 'Low', 'high', 'medium', 'low'].includes(alert.severity)) {
+    return alert.severity.charAt(0).toUpperCase() + alert.severity.slice(1).toLowerCase();
+  }
+
+  if (isIntrusion && alertType.toLowerCase().includes('zero_day')) return 'High';
+  if (isIntrusion && (alertType.includes('attack') || alertType.includes('exploit'))) return 'High';
   if (isIntrusion) return 'Medium';
   return 'Low';
 };
@@ -41,10 +46,11 @@ const calculateSeverity = (alert) => {
 // Risk Score Logic Helper
 const calculateRiskScore = (alert) => {
   let score = 0;
-  if (alert.intrusion === 1 || alert.ml_prediction === 1) score += 50;
-  if ((alert.payload_size || 0) > 5000) score += 20;
-  if (!['Chrome', 'Firefox', 'Safari'].some(ua => alert.user_agent?.includes(ua))) score += 15;
-  if (alert.status >= 400) score += 15;
+  // Use actual alert fields
+  if (alert.ml_prediction > 0.5) score += Math.round(alert.ml_prediction * 50);
+  if (alert.threat_score > 0.5) score += Math.round(alert.threat_score * 30);
+  if (alert.signature_match) score += 15;
+  if (alert.hybrid_score > 0.5) score += 5;
   return Math.min(score, 100);
 };
 
@@ -139,14 +145,18 @@ function AlertsIncidents() {
       const matchesSearch =
         alert.source_ip?.includes(searchTerm) ||
         alert.destination_ip?.includes(searchTerm) ||
-        alert.scan_type?.toLowerCase().includes(searchTerm.toLowerCase());
+        alert.alert_type?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        alert.description?.toLowerCase().includes(searchTerm.toLowerCase());
 
+      // Check if alert is a threat based on ml_prediction (> 0.5 indicates likely threat)
+      const isThreat = alert.ml_prediction > 0.5 || alert.severity === 'High' || alert.severity === 'Medium';
       const matchesIntrusion = filters.intrusion === 'all' ||
-        (filters.intrusion === 'malicious' ? (alert.intrusion === 1 || alert.ml_prediction === 1) : (alert.intrusion === 0 && !alert.ml_prediction));
+        (filters.intrusion === 'malicious' ? isThreat : !isThreat);
 
       const matchesProtocol = filters.protocol === 'all' || alert.protocol === filters.protocol;
       const matchesSeverity = filters.severity === 'all' || alert.severity === filters.severity;
-      const matchesScanType = filters.scan_type === 'all' || alert.scan_type === filters.scan_type;
+      // Use alert_type for scan type filtering
+      const matchesScanType = filters.scan_type === 'all' || alert.alert_type === filters.scan_type;
 
       return matchesSearch && matchesIntrusion && matchesProtocol && matchesSeverity && matchesScanType;
     });
@@ -195,7 +205,8 @@ function AlertsIncidents() {
       showCancel: true,
       isLoading: false,
       onConfirm: async () => {
-        setConfirmDialog(prev => ({ ...prev, isLoading: true }))
+        setConfirmDialog(prev => ({ ...prev, isOpen: false })) // Close immediately
+        setOpenActionId(null)
         try {
           await api.post('/firewall/block-ip', { ip })
           showToast(`IP ${ip} has been blocked successfully`, 'success')
@@ -203,8 +214,6 @@ function AlertsIncidents() {
           console.error('Error blocking IP:', error)
           showToast('Failed to block IP', 'error')
         }
-        setConfirmDialog(prev => ({ ...prev, isOpen: false, isLoading: false }))
-        setOpenActionId(null)
       },
     })
   }
@@ -219,7 +228,8 @@ function AlertsIncidents() {
       showCancel: true,
       isLoading: false,
       onConfirm: async () => {
-        setConfirmDialog(prev => ({ ...prev, isLoading: true }))
+        setConfirmDialog(prev => ({ ...prev, isOpen: false })) // Close immediately
+        setOpenActionId(null)
         try {
           await alertsAPI.resolve(id)
           loadAlerts()
@@ -228,8 +238,6 @@ function AlertsIncidents() {
           console.error('Error resolving alert:', error)
           showToast('Failed to resolve alert', 'error')
         }
-        setConfirmDialog(prev => ({ ...prev, isOpen: false, isLoading: false }))
-        setOpenActionId(null)
       },
     })
   }
@@ -244,7 +252,8 @@ function AlertsIncidents() {
       showCancel: true,
       isLoading: false,
       onConfirm: async () => {
-        setConfirmDialog(prev => ({ ...prev, isLoading: true }))
+        setConfirmDialog(prev => ({ ...prev, isOpen: false })) // Close immediately
+        setOpenActionId(null)
         try {
           await api.post(`/alerts/${id}/escalate`)
           loadAlerts()
@@ -253,8 +262,6 @@ function AlertsIncidents() {
           console.error('Error escalating alert:', error)
           showToast('Failed to escalate alert', 'error')
         }
-        setConfirmDialog(prev => ({ ...prev, isOpen: false, isLoading: false }))
-        setOpenActionId(null)
       },
     })
   }
@@ -432,11 +439,11 @@ function AlertsIncidents() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Intrusion</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Scan Type</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Alert Type</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Source IP</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Destination</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Payload size</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Threat Score</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Severity</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Timestamp</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Action</th>
@@ -450,21 +457,24 @@ function AlertsIncidents() {
                   className="group hover:bg-gray-50 transition-all cursor-pointer"
                 >
                   <td className="px-6 py-4">
-                    {(alert.intrusion === 1 || alert.ml_prediction === 1) ? (
+                    {(alert.ml_prediction > 0.5 || alert.threat_score > 0.5) ? (
                       <span className="flex items-center gap-1.5 text-red-600 font-bold text-xs ring-1 ring-red-500/20 px-2 py-1 rounded bg-red-50 w-fit uppercase">
-                        <AlertTriangle className="w-3 h-3" /> Intrusion
+                        <AlertTriangle className="w-3 h-3" /> Threat
                       </span>
                     ) : (
                       <span className="flex items-center gap-1.5 text-green-600 font-bold text-xs ring-1 ring-green-500/20 px-2 py-1 rounded bg-green-50 w-fit uppercase">
-                        <CheckCircle className="w-3 h-3" /> Not Intrusion
+                        <CheckCircle className="w-3 h-3" /> Normal
                       </span>
                     )}
                   </td>
                   <td className="px-6 py-4 text-sm font-medium text-gray-900">
                     {(() => {
-                      const type = alert.scan_type || 'Normal'
+                      const type = alert.alert_type || 'Normal'
                       const typeMap = {
                         'Normal': 'Normal Traffic',
+                        'known_attack': 'Known Attack',
+                        'zero_day': 'Zero-Day Attack',
+                        'suspicious': 'Suspicious Activity',
                         'Port_Scan': 'Port Scan Attack',
                         'Port Scan': 'Port Scan Attack',
                         'Sequential Port Scan': 'Sequential Port Scan',
@@ -490,11 +500,15 @@ function AlertsIncidents() {
                   <td className="px-6 py-4 text-sm text-gray-600">
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-gray-700">{alert.destination_ip}</span>
-                      <span className="text-xs bg-gray-100 px-1.5 py-0.5 rounded text-gray-500">{alert.port}</span>
+                      <span className="text-xs bg-gray-100 px-1.5 py-0.5 rounded text-gray-500">{alert.protocol}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-600">
-                    {alert.payload_size?.toLocaleString() || '0'} Bytes
+                    <div className="flex items-center gap-1">
+                      <span className={`font-bold ${alert.threat_score > 0.7 ? 'text-red-600' : alert.threat_score > 0.4 ? 'text-amber-600' : 'text-green-600'}`}>
+                        {((alert.threat_score || 0) * 100).toFixed(0)}%
+                      </span>
+                    </div>
                   </td>
                   <td className="px-6 py-4">
                     {getSeverityBadge(alert.severity)}
