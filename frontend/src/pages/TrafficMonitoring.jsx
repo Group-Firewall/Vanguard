@@ -185,7 +185,7 @@ function TrafficMonitoring() {
       confirmText: 'Stop Capture',
       isLoading: false,
       onConfirm: async () => {
-        setConfirmDialog(prev => ({ ...prev, isLoading: true }))
+        setConfirmDialog(prev => ({ ...prev, isOpen: false })) // Close immediately
         try {
           await captureAPI.stop()
           setCaptureStatus(prev => ({ ...prev, is_capturing: false }))
@@ -193,7 +193,6 @@ function TrafficMonitoring() {
         } catch (err) {
           showToast(`Failed to stop capture: ${err.message}`, 'error')
         }
-        setConfirmDialog(prev => ({ ...prev, isOpen: false, isLoading: false }))
       },
     })
   }
@@ -273,15 +272,14 @@ function TrafficMonitoring() {
       confirmText: 'Block IP',
       isLoading: false,
       onConfirm: async () => {
-        setConfirmDialog(prev => ({ ...prev, isLoading: true }))
+        setConfirmDialog(prev => ({ ...prev, isOpen: false })) // Close immediately
+        setOpenActionId(null)
         try {
           await firewallAPI.block(ip)
           showToast(`IP ${ip} has been blocked successfully`, 'success')
         } catch (err) {
           showToast('Failed to block IP. Check the console for details.', 'error')
         }
-        setConfirmDialog(prev => ({ ...prev, isOpen: false, isLoading: false }))
-        setOpenActionId(null)
       },
     })
   }
@@ -295,15 +293,14 @@ function TrafficMonitoring() {
       confirmText: 'Whitelist',
       isLoading: false,
       onConfirm: async () => {
-        setConfirmDialog(prev => ({ ...prev, isLoading: true }))
+        setConfirmDialog(prev => ({ ...prev, isOpen: false })) // Close immediately
+        setOpenActionId(null)
         try {
           await firewallAPI.whitelist(ip)
           showToast(`IP ${ip} has been whitelisted`, 'success')
         } catch (err) {
           showToast('Failed to whitelist IP', 'error')
         }
-        setConfirmDialog(prev => ({ ...prev, isOpen: false, isLoading: false }))
-        setOpenActionId(null)
       },
     })
   }

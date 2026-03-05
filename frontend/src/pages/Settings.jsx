@@ -191,14 +191,13 @@ function Settings() {
       showCancel: true,
       isLoading: false,
       onConfirm: async () => {
-        setConfirmDialog(prev => ({ ...prev, isLoading: true }))
+        setConfirmDialog(prev => ({ ...prev, isOpen: false })) // Close immediately
         try {
           await testDataAPI.create()
           showToast('Test data generated successfully! Refresh your dashboard to see the results.', 'success')
         } catch (err) {
           showToast('Error generating test data', 'error')
         }
-        setConfirmDialog(prev => ({ ...prev, isOpen: false, isLoading: false }))
       },
     })
   }
