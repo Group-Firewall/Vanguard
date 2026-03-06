@@ -42,6 +42,9 @@ function Reports() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [activeTab, setActiveTab] = useState('summary')
   const [timeRange, setTimeRange] = useState('7D')
+  const [selectedReportType, setSelectedReportType] = useState('daily')
+  const [includePatterns, setIncludePatterns] = useState(true)
+  const [includeML, setIncludeML] = useState(true)
   const [reportHistory, setReportHistory] = useState([
     { id: 1, name: 'Weekly System Audit', date: '2026-02-10', range: 'Feb 03 - Feb 10', status: 'Completed', type: 'PDF' },
     { id: 2, name: 'Intrusion Pattern Analysis', date: '2026-02-08', range: 'Feb 01 - Feb 08', status: 'Completed', type: 'CSV' },
@@ -54,50 +57,165 @@ function Reports() {
     highSeverity: 56
   })
 
-  const handleGenerate = () => {
+  const generateCSVReport = (alerts, reportName) => {
+    const headers = ['Timestamp', 'Source IP', 'Destination IP', 'Protocol', 'Alert Type', 'Severity', 'Threat Score', 'Description']
+    const csvData = alerts.map(a => [
+      format(new Date(a.timestamp), 'yyyy-MM-dd HH:mm:ss'),
+      a.source_ip || 'N/A',
+      a.destination_ip || 'N/A',
+      a.protocol || 'Unknown',
+      a.alert_type || 'Unknown',
+      a.severity || 'Low',
+      ((a.threat_score || 0) * 100).toFixed(0) + '%',
+      (a.description || '').replace(/,/g, ';') // Escape commas
+    ])
+
+    const csvContent = [
+      `# Vanguard Security Report - ${reportName}`,
+      `# Generated: ${format(new Date(), 'yyyy-MM-dd HH:mm:ss')}`,
+      `# Time Range: ${timeRange}`,
+      '',
+      headers.join(','),
+      ...csvData.map(row => row.join(','))
+    ].join('\n')
+
+    return csvContent
+  }
+
+  const generateJSONReport = (alerts, reportName) => {
+    const report = {
+      reportName,
+      generatedAt: format(new Date(), 'yyyy-MM-dd HH:mm:ss'),
+      timeRange,
+      summary: {
+        totalAlerts: alerts.length,
+        highSeverity: alerts.filter(a => (a.severity || '').toLowerCase() === 'high').length,
+        mediumSeverity: alerts.filter(a => (a.severity || '').toLowerCase() === 'medium').length,
+        lowSeverity: alerts.filter(a => (a.severity || '').toLowerCase() === 'low').length,
+      },
+      alerts: alerts.map(a => ({
+        timestamp: a.timestamp,
+        sourceIP: a.source_ip,
+        destinationIP: a.destination_ip,
+        protocol: a.protocol,
+        alertType: a.alert_type,
+        severity: a.severity,
+        threatScore: a.threat_score,
+        description: a.description,
+        resolved: a.resolved
+      }))
+    }
+    return JSON.stringify(report, null, 2)
+  }
+
+  const generateTextReport = (alerts, reportName) => {
+    const divider = '=' .repeat(60)
+    const lines = [
+      divider,
+      '        VANGUARD INTRUSION DETECTION SYSTEM',
+      '              SECURITY REPORT',
+      divider,
+      '',
+      `Report: ${reportName}`,
+      `Generated: ${format(new Date(), 'yyyy-MM-dd HH:mm:ss')}`,
+      `Time Range: ${timeRange}`,
+      '',
+      divider,
+      '                    SUMMARY',
+      divider,
+      '',
+      `Total Alerts: ${alerts.length}`,
+      `High Severity: ${alerts.filter(a => (a.severity || '').toLowerCase() === 'high').length}`,
+      `Medium Severity: ${alerts.filter(a => (a.severity || '').toLowerCase() === 'medium').length}`,
+      `Low Severity: ${alerts.filter(a => (a.severity || '').toLowerCase() === 'low').length}`,
+      '',
+      divider,
+      '                 ALERT DETAILS',
+      divider,
+      ''
+    ]
+
+    alerts.forEach((a, i) => {
+      lines.push(`[${i + 1}] ${format(new Date(a.timestamp), 'yyyy-MM-dd HH:mm:ss')}`)
+      lines.push(`    Type: ${a.alert_type || 'Unknown'}`)
+      lines.push(`    Source: ${a.source_ip || 'N/A'} -> ${a.destination_ip || 'N/A'}`)
+      lines.push(`    Severity: ${a.severity || 'Low'} | Threat Score: ${((a.threat_score || 0) * 100).toFixed(0)}%`)
+      lines.push(`    ${a.description || 'No description'}`)
+      lines.push('')
+    })
+
+    lines.push(divider)
+    lines.push('                 END OF REPORT')
+    lines.push(divider)
+
+    return lines.join('\n')
+  }
+
+  const downloadFile = (content, filename, mimeType) => {
+    const blob = new Blob([content], { type: mimeType })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.setAttribute('href', url)
+    link.setAttribute('download', filename)
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
+  const handleGenerate = async () => {
     setIsGenerating(true)
-    setTimeout(async () => {
-      setIsGenerating(false)
+    
+    try {
+      // Fetch alerts based on time range
+      const limitMap = { 'Daily': 50, 'Weekly': 200, 'Monthly': 500 }
+      const response = await alertsAPI.getAll({ limit: limitMap[timeRange] || 100 })
+      const alerts = response.data || []
 
-      // Simulate fetching alerts for the period
-      const response = await alertsAPI.getAll({ limit: 100 })
-      const dataToExport = response.data || []
+      const reportTypeNames = {
+        'daily': 'Daily Traffic Snapshot',
+        'weekly': 'Weekly Enterprise Audit',
+        'monthly': 'Monthly Compliance Review'
+      }
+      const reportName = reportTypeNames[selectedReportType] || 'Security Report'
+      const dateStr = format(new Date(), 'yyyy-MM-dd')
 
-      const headers = ['Timestamp', 'Source IP', 'Destination IP', 'Type', 'Severity', 'Risk Score'];
-      const csvData = dataToExport.map(a => [
-        format(new Date(a.timestamp), 'yyyy-MM-dd HH:mm:ss'),
-        a.source_ip,
-        a.destination_ip,
-        a.scan_type || 'Unknown',
-        'High', // Simulated severity for example
-        75 // Simulated risk score for example
-      ]);
+      // Generate all three formats for download
+      const csvContent = generateCSVReport(alerts, reportName)
+      const jsonContent = generateJSONReport(alerts, reportName)
+      const textContent = generateTextReport(alerts, reportName)
 
-      const csvContent = [
-        headers.join(','),
-        ...csvData.map(row => row.join(','))
-      ].join('\n');
+      // Download CSV
+      downloadFile(csvContent, `vanguard-${selectedReportType}-${dateStr}.csv`, 'text/csv;charset=utf-8;')
+      
+      // Small delay between downloads
+      await new Promise(r => setTimeout(r, 500))
+      
+      // Download JSON
+      downloadFile(jsonContent, `vanguard-${selectedReportType}-${dateStr}.json`, 'application/json')
+      
+      await new Promise(r => setTimeout(r, 500))
+      
+      // Download TXT (readable report)
+      downloadFile(textContent, `vanguard-${selectedReportType}-${dateStr}.txt`, 'text/plain')
 
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.setAttribute('href', url);
-      link.setAttribute('download', `vanguard-report-${timeRange}-${new Date().toISOString().split('T')[0]}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
+      // Add to history
       const newReport = {
         id: Date.now(),
-        name: `${timeRange} System Audit`,
-        date: new Date().toISOString().split('T')[0],
+        name: reportName,
+        date: dateStr,
         range: timeRange === 'Daily' ? 'Last 24 Hours' : timeRange === 'Weekly' ? 'Last 7 Days' : 'Last 30 Days',
         status: 'Completed',
-        type: 'CSV'
+        type: 'Multi'
       }
-      setReportHistory([newReport, ...reportHistory])
-    }, 2000)
+      setReportHistory(prev => [newReport, ...prev])
+
+    } catch (error) {
+      console.error('Error generating report:', error)
+    } finally {
+      setIsGenerating(false)
+    }
   }
 
   const chartData = [
@@ -280,13 +398,17 @@ function Reports() {
               </h3>
               <div className="space-y-6">
                 <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-2">Primary Period</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-2">Report Type</label>
                   <div className="relative">
                     <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                    <select className="w-full pl-10 pr-4 py-3 bg-slate-800 border border-slate-700 rounded-2xl text-xs font-bold text-white outline-none focus:ring-2 focus:ring-blue-500 appearance-none">
-                      <option>Daily Traffic Snapshot</option>
-                      <option>Weekly Enterprise Audit</option>
-                      <option>Monthly Compliance Review</option>
+                    <select 
+                      value={selectedReportType}
+                      onChange={(e) => setSelectedReportType(e.target.value)}
+                      className="w-full pl-10 pr-4 py-3 bg-slate-800 border border-slate-700 rounded-2xl text-xs font-bold text-white outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
+                    >
+                      <option value="daily">Daily Traffic Snapshot</option>
+                      <option value="weekly">Weekly Enterprise Audit</option>
+                      <option value="monthly">Monthly Compliance Review</option>
                     </select>
                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
                   </div>
@@ -296,14 +418,20 @@ function Reports() {
                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-2">Include Insights</label>
                   <div className="space-y-2">
                     <label className="flex items-center gap-3 cursor-pointer group">
-                      <div className="w-5 h-5 border-2 border-slate-700 rounded-lg flex items-center justify-center group-hover:border-blue-500 transition-all">
-                        <CheckCircle className="w-3 h-3 text-blue-500" />
+                      <div 
+                        onClick={() => setIncludePatterns(!includePatterns)}
+                        className={`w-5 h-5 border-2 rounded-lg flex items-center justify-center transition-all ${includePatterns ? 'border-blue-500 bg-blue-500/20' : 'border-slate-700 group-hover:border-blue-500'}`}
+                      >
+                        {includePatterns && <CheckCircle className="w-3 h-3 text-blue-500" />}
                       </div>
                       <span className="text-xs font-bold text-slate-300">Intrusion Pattern Analysis</span>
                     </label>
                     <label className="flex items-center gap-3 cursor-pointer group">
-                      <div className="w-5 h-5 border-2 border-slate-700 rounded-lg flex items-center justify-center group-hover:border-blue-500 transition-all">
-                        <CheckCircle className="w-3 h-3 text-blue-500" />
+                      <div 
+                        onClick={() => setIncludeML(!includeML)}
+                        className={`w-5 h-5 border-2 rounded-lg flex items-center justify-center transition-all ${includeML ? 'border-blue-500 bg-blue-500/20' : 'border-slate-700 group-hover:border-blue-500'}`}
+                      >
+                        {includeML && <CheckCircle className="w-3 h-3 text-blue-500" />}
                       </div>
                       <span className="text-xs font-bold text-slate-300">ML Performance Feedback</span>
                     </label>
@@ -340,12 +468,20 @@ function Reports() {
                 {reportHistory.map(report => (
                   <div key={report.id} className="group flex items-center justify-between">
                     <div className="flex gap-4">
-                      <div className={`p-2.5 rounded-xl ${report.type === 'PDF' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                        {report.type === 'PDF' ? <FileText className="w-4 h-4" /> : <FileSpreadsheet className="w-4 h-4" />}
+                      <div className={`p-2.5 rounded-xl ${
+                        report.type === 'PDF' ? 'bg-red-50 text-red-600' : 
+                        report.type === 'Multi' ? 'bg-blue-50 text-blue-600' :
+                        'bg-green-50 text-green-600'
+                      }`}>
+                        {report.type === 'PDF' ? <FileText className="w-4 h-4" /> : 
+                         report.type === 'Multi' ? <Download className="w-4 h-4" /> :
+                         <FileSpreadsheet className="w-4 h-4" />}
                       </div>
                       <div>
                         <p className="text-xs font-bold text-slate-900 group-hover:text-blue-600 transition-colors uppercase">{report.name}</p>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">{report.date} • {report.range}</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+                          {report.date} • {report.range} • {report.type === 'Multi' ? 'CSV+JSON+TXT' : report.type}
+                        </p>
                       </div>
                     </div>
                     <button className="opacity-0 group-hover:opacity-100 p-2 text-slate-300 hover:text-blue-600 bg-slate-50 rounded-lg transition-all">

@@ -185,12 +185,16 @@ function TrafficMonitoring() {
       confirmText: 'Stop Capture',
       isLoading: false,
       onConfirm: async () => {
-        setConfirmDialog(prev => ({ ...prev, isOpen: false })) // Close immediately
+        // Optimistic UI update - change button immediately
+        setCaptureStatus(prev => ({ ...prev, is_capturing: false }))
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }))
+        showToast('Stopping capture...', 'info')
         try {
           await captureAPI.stop()
-          setCaptureStatus(prev => ({ ...prev, is_capturing: false }))
           showToast('Packet capture stopped successfully', 'success')
         } catch (err) {
+          // Revert on failure
+          setCaptureStatus(prev => ({ ...prev, is_capturing: true }))
           showToast(`Failed to stop capture: ${err.message}`, 'error')
         }
       },
