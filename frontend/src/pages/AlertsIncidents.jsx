@@ -121,7 +121,8 @@ function AlertsIncidents() {
 
   useEffect(() => {
     loadAlerts()
-    const interval = setInterval(loadAlerts, 10000)
+    // Refresh alerts more frequently during active capture
+    const interval = setInterval(loadAlerts, 3000)
     return () => clearInterval(interval)
   }, [])
 

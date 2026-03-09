@@ -25,7 +25,7 @@ const Login = () => {
         setLoading(true);
         try {
             await login(username.trim(), password);
-            setSuccess('Login successful! Redirecting...');
+            setSuccess('Login successful!');
             setTimeout(() => navigate('/dashboard'), 1000);
         } catch (err) {
             setError(err.response?.data?.detail || 'Failed to login');

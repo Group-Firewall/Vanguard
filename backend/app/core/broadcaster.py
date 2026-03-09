@@ -38,7 +38,8 @@ class ChannelBroadcaster:
         """Accept and register a new WebSocket client."""
         await websocket.accept()
         self._connections.add(websocket)
-        logger.info(
+        # Use debug level to reduce log noise during page refreshes
+        logger.debug(
             "[%s] client connected — total=%d",
             self.channel_name,
             len(self._connections),
@@ -47,7 +48,8 @@ class ChannelBroadcaster:
     def disconnect(self, websocket: WebSocket) -> None:
         """Remove a WebSocket client (idempotent)."""
         self._connections.discard(websocket)
-        logger.info(
+        # Use debug level to reduce log noise during page refreshes
+        logger.debug(
             "[%s] client disconnected — total=%d",
             self.channel_name,
             len(self._connections),

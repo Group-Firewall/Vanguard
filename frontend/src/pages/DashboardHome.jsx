@@ -360,18 +360,65 @@ function DashboardHome() {
             </div>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trafficHistory}>
+                <AreaChart data={trafficHistory.length > 0 ? trafficHistory : [
+                  { time: '00:00', value: 0, threats: 0 },
+                  { time: '00:01', value: 0, threats: 0 },
+                  { time: '00:02', value: 0, threats: 0 }
+                ]}>
                   <defs>
                     <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1} />
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                      <stop offset="50%" stopColor="#3b82f6" stopOpacity={0.1} />
                       <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
                     </linearGradient>
+                    <linearGradient id="colorThreats" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#ef4444" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                    </linearGradient>
                   </defs>
-                  <Tooltip
-                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <XAxis 
+                    dataKey="time" 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 600 }}
                   />
-                  <Area type="monotone" dataKey="value" stroke="#3b82f6" fillOpacity={1} fill="url(#colorValue)" strokeWidth={3} isAnimationActive={false} />
-                  <Area type="monotone" dataKey="threats" stroke="#ef4444" fill="transparent" strokeWidth={2} isAnimationActive={false} />
+                  <YAxis 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 600 }}
+                    width={40}
+                  />
+                  <Tooltip
+                    contentStyle={{ 
+                      borderRadius: '16px', 
+                      border: 'none', 
+                      boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)',
+                      background: 'white',
+                      padding: '12px 16px'
+                    }}
+                    labelStyle={{ fontWeight: 700, marginBottom: 4 }}
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="value" 
+                    stroke="#3b82f6" 
+                    fillOpacity={1} 
+                    fill="url(#colorValue)" 
+                    strokeWidth={3} 
+                    isAnimationActive={false}
+                    name="Packets"
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="threats" 
+                    stroke="#ef4444" 
+                    fillOpacity={1} 
+                    fill="url(#colorThreats)" 
+                    strokeWidth={2} 
+                    isAnimationActive={false}
+                    name="Threats"
+                  />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -546,26 +593,60 @@ function DashboardHome() {
 
         {/* Mini Live Preview Feed row */}
         <div className="grid grid-cols-1 lg:grid-cols-1 gap-8">
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm overflow-hidden">
-            <h3 className="text-base font-bold mb-6 flex items-center gap-2">
-              <Activity className="w-4 h-4 text-blue-600" /> Live Stream Feed
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="bg-gradient-to-br from-slate-900 to-slate-800 border border-slate-700 rounded-3xl p-6 shadow-xl overflow-hidden">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Activity className="w-4 h-4 text-blue-400" /> Live Stream Feed
+              </h3>
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${liveTraffic.length > 0 ? 'bg-green-500 animate-pulse' : 'bg-slate-500'}`}></span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase">
+                  {liveTraffic.length > 0 ? 'Live' : 'Waiting'}
+                </span>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
               {liveTraffic.map((p, i) => (
-                <div key={i} className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl animate-in slide-in-from-right-2 duration-300">
-                  <div className={`w-2 h-2 rounded-full ${p.is_intrusion ? 'bg-red-500 animate-pulse' : 'bg-blue-400'}`}></div>
-                  <div className="flex-grow min-w-0">
-                    <div className="flex justify-between items-center mb-0.5">
-                      <p className="text-[10px] font-mono font-bold text-slate-700 truncate">{p.src_ip}</p>
-                      <span className="text-[9px] font-bold text-slate-400">{p.protocol}</span>
+                <div 
+                  key={i} 
+                  className={`relative flex items-center gap-3 p-4 rounded-2xl transition-all duration-300 ${
+                    p.is_intrusion 
+                      ? 'bg-red-500/10 border border-red-500/30' 
+                      : 'bg-slate-800/50 border border-slate-700/50 hover:border-blue-500/30'
+                  }`}
+                >
+                  {p.is_intrusion && (
+                    <div className="absolute inset-0 bg-red-500/5 animate-pulse rounded-2xl"></div>
+                  )}
+                  <div className={`w-3 h-3 rounded-full flex-shrink-0 ${p.is_intrusion ? 'bg-red-500 animate-pulse shadow-lg shadow-red-500/50' : 'bg-blue-500 shadow-lg shadow-blue-500/30'}`}></div>
+                  <div className="flex-grow min-w-0 relative">
+                    <div className="flex justify-between items-center mb-1">
+                      <p className="text-xs font-mono font-bold text-white truncate">{p.src_ip}</p>
+                      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
+                        p.protocol === 'TCP' ? 'bg-blue-500/20 text-blue-400' :
+                        p.protocol === 'UDP' ? 'bg-green-500/20 text-green-400' :
+                        'bg-amber-500/20 text-amber-400'
+                      }`}>{p.protocol}</span>
                     </div>
-                    {p.is_intrusion && (
-                      <span className="text-[8px] font-black text-red-600 uppercase tracking-tighter">Mitigating...</span>
-                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-500 font-mono">→ {p.dst_ip?.split('.').slice(-1)[0] || '...'}</span>
+                      {p.is_intrusion ? (
+                        <span className="text-[8px] font-black text-red-400 uppercase tracking-wider animate-pulse">THREAT</span>
+                      ) : (
+                        <span className="text-[8px] font-bold text-slate-500 uppercase">{p.packet_size || 0}B</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
-              {liveTraffic.length === 0 && <p className="col-span-5 text-center py-8 text-xs text-slate-400 animate-pulse">Waiting for traffic stream...</p>}
+              {liveTraffic.length === 0 && (
+                <div className="col-span-5 text-center py-12">
+                  <div className="inline-flex items-center gap-3 px-6 py-3 bg-slate-800/50 rounded-2xl border border-slate-700/50">
+                    <div className="w-2 h-2 rounded-full bg-slate-500 animate-pulse"></div>
+                    <span className="text-xs text-slate-400 font-medium">Start capture to see live traffic stream</span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
