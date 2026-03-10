@@ -72,7 +72,7 @@ function Sidebar() {
       label: 'Reports',
       icon: FileText,
       path: '/reports',
-      description: 'System Reports & Analytics'
+      description: 'Reports & Capture Sessions'
     },
     {
       id: 'settings',

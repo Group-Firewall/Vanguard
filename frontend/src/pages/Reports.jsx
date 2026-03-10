@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react'
-import { alertsAPI, metricsAPI } from '../services/api'
-import { format, subDays } from 'date-fns'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import api, { alertsAPI, metricsAPI } from '../services/api'
+import { format, subDays, parseISO } from 'date-fns'
+import ConfirmDialog, { Toast } from '../components/ConfirmDialog'
 import {
   LineChart,
   Line,
@@ -35,12 +36,40 @@ import {
   Search,
   ChevronDown,
   Printer,
-  FileSpreadsheet
-} from 'lucide-react'
+  FileSpreadsheet,
+  Database,
+  Trash2,
+  Eye,
+  X,
+  Activity,
+  Globe,
+  Server,
+  Wifi
+}from 'lucide-react'
+
+// Protocol colors for charts
+const PROTOCOL_COLORS = {
+  TCP: '#3b82f6',
+  UDP: '#10b981',
+  ICMP: '#f59e0b',
+  HTTP: '#8b5cf6',
+  HTTPS: '#ec4899',
+  DNS: '#06b6d4',
+  SSH: '#ef4444',
+  OTHER: '#6b7280'
+}
+
+const SEVERITY_COLORS = {
+  critical: '#ef4444',
+  high: '#f97316',
+  medium: '#f59e0b',
+  low: '#10b981',
+  info: '#6b7280'
+}
 
 function Reports() {
   const [isGenerating, setIsGenerating] = useState(false)
-  const [activeTab, setActiveTab] = useState('summary')
+  const [activeTab, setActiveTab] = useState('security') // 'security' or 'captures'
   const [timeRange, setTimeRange] = useState('7D')
   const [selectedReportType, setSelectedReportType] = useState('daily')
   const [includePatterns, setIncludePatterns] = useState(true)
@@ -56,6 +85,132 @@ function Reports() {
     targetedPort: '445 (SMB)',
     highSeverity: 56
   })
+
+  // Capture Reports State
+  const [captureReports, setCaptureReports] = useState([])
+  const [captureLoading, setCaptureLoading] = useState(false)
+  const [viewingCapture, setViewingCapture] = useState(null)
+  const [filterStartDate, setFilterStartDate] = useState('')
+  const [filterEndDate, setFilterEndDate] = useState('')
+  
+  // Dialog state
+  const [dialog, setDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmLabel: 'Confirm',
+    confirmStyle: 'danger',
+    onConfirm: () => {}
+  })
+  const [toast, setToast] = useState({
+    isVisible: false,
+    message: '',
+    type: 'info'
+  })
+
+  const showToast = (message, type = 'info') => {
+    setToast({ isVisible: true, message, type })
+  }
+
+  // Load capture reports
+  const loadCaptureReports = useCallback(async () => {
+    try {
+      setCaptureLoading(true)
+      const params = {}
+      if (filterStartDate) params.start_date = filterStartDate
+      if (filterEndDate) params.end_date = filterEndDate
+      
+      const response = await api.get('/reports/captures', { params })
+      setCaptureReports(response.data.reports || [])
+    } catch (err) {
+      console.error('Failed to load capture reports:', err)
+      showToast('Failed to load capture reports', 'error')
+    } finally {
+      setCaptureLoading(false)
+    }
+  }, [filterStartDate, filterEndDate])
+
+  useEffect(() => {
+    if (activeTab === 'captures') {
+      loadCaptureReports()
+    }
+  }, [activeTab, loadCaptureReports])
+
+  // View capture report details
+  const viewCaptureReport = async (reportId) => {
+    try {
+      const response = await api.get(`/reports/captures/${reportId}`)
+      setViewingCapture(response.data)
+    } catch (err) {
+      showToast('Failed to load report details', 'error')
+    }
+  }
+
+  // Download capture report
+  const downloadCaptureReport = (reportId, fileType) => {
+    const url = `${api.defaults.baseURL}/reports/captures/${reportId}/download/${fileType}`
+    const token = localStorage.getItem('token')
+    
+    fetch(url, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.blob())
+      .then(blob => {
+        const downloadUrl = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = downloadUrl
+        a.download = `capture_report_${reportId}.${fileType === 'json' ? 'json' : 'csv'}`
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        window.URL.revokeObjectURL(downloadUrl)
+        showToast(`Downloaded ${fileType} report`, 'success')
+      })
+      .catch(() => showToast('Download failed', 'error'))
+  }
+
+  // Delete capture report
+  const confirmDeleteCapture = (reportId) => {
+    setDialog({
+      isOpen: true,
+      title: 'Delete Capture Report',
+      message: `Are you sure you want to delete this capture report? This will remove the JSON summary and all associated CSV files.`,
+      confirmLabel: 'Delete',
+      confirmStyle: 'danger',
+      onConfirm: async () => {
+        setDialog(prev => ({ ...prev, isOpen: false }))
+        try {
+          await api.delete(`/reports/captures/${reportId}`)
+          showToast('Report deleted successfully', 'success')
+          loadCaptureReports()
+          if (viewingCapture?.id === reportId) setViewingCapture(null)
+        } catch (err) {
+          showToast('Failed to delete report', 'error')
+        }
+      }
+    })
+  }
+
+  // Cleanup old capture reports
+  const confirmCleanup = () => {
+    setDialog({
+      isOpen: true,
+      title: 'Cleanup Old Reports',
+      message: 'This will delete all capture reports older than 30 days. Are you sure?',
+      confirmLabel: 'Cleanup',
+      confirmStyle: 'danger',
+      onConfirm: async () => {
+        setDialog(prev => ({ ...prev, isOpen: false }))
+        try {
+          const response = await api.post('/reports/cleanup', null, { params: { days_to_keep: 30 } })
+          showToast(`Deleted ${response.data.deleted_count} old reports`, 'success')
+          loadCaptureReports()
+        } catch (err) {
+          showToast('Cleanup failed', 'error')
+        }
+      }
+    })
+  }
 
   const generateCSVReport = (alerts, reportName) => {
     const headers = ['Timestamp', 'Source IP', 'Destination IP', 'Protocol', 'Alert Type', 'Severity', 'Threat Score', 'Description']
@@ -241,39 +396,65 @@ function Reports() {
     <div className="min-h-screen bg-[#f8fafc] p-6 lg:p-8 font-['Inter']">
       <div className="max-w-7xl mx-auto">
 
-        {/* Header section */}
+        {/* Header section with Tabs */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
                 <FileText className="w-5 h-5" />
               </span>
-              <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Security Reports</h1>
+              <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Reports Center</h1>
             </div>
-            <p className="text-sm text-slate-500 font-medium">Generate and export comprehensive security posture summaries</p>
+            <p className="text-sm text-slate-500 font-medium">Security reports and capture session history</p>
           </div>
 
+          {/* Tabs */}
           <div className="flex items-center gap-3">
             <div className="flex bg-white border border-slate-200 p-1 rounded-xl shadow-sm">
-              {['Daily', 'Weekly', 'Monthly'].map(range => (
-                <button
-                  key={range}
-                  onClick={() => setTimeRange(range)}
-                  className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${timeRange === range ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'
-                    }`}
-                >
-                  {range}
-                </button>
-              ))}
+              <button
+                onClick={() => setActiveTab('security')}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+                  activeTab === 'security' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                <Shield className="w-4 h-4" /> Security Reports
+              </button>
+              <button
+                onClick={() => setActiveTab('captures')}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+                  activeTab === 'captures' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                <Database className="w-4 h-4" /> Capture Sessions
+              </button>
             </div>
-            <button
-              onClick={() => window.print()}
-              className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 shadow-sm"
-            >
-              <Printer className="w-4 h-4" />
-            </button>
           </div>
         </div>
+
+        {/* Security Reports Tab */}
+        {activeTab === 'security' && (
+          <>
+            {/* Time Range and Print Controls */}
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex bg-white border border-slate-200 p-1 rounded-xl shadow-sm">
+                {['Daily', 'Weekly', 'Monthly'].map(range => (
+                  <button
+                    key={range}
+                    onClick={() => setTimeRange(range)}
+                    className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${timeRange === range ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'
+                      }`}
+                  >
+                    {range}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => window.print()}
+                className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 shadow-sm"
+              >
+                <Printer className="w-4 h-4" />
+              </button>
+            </div>
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -494,7 +675,362 @@ function Reports() {
             </div>
           </div>
         </div>
+          </>
+        )}
+
+        {/* Capture Sessions Tab */}
+        {activeTab === 'captures' && (
+          <>
+            {/* Filters */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6">
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Filter className="w-5 h-5 text-slate-400" />
+                  <span className="text-sm font-bold text-slate-700">Filter by Date</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-slate-500">From:</label>
+                  <input
+                    type="date"
+                    value={filterStartDate}
+                    onChange={(e) => setFilterStartDate(e.target.value)}
+                    className="px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-slate-500">To:</label>
+                  <input
+                    type="date"
+                    value={filterEndDate}
+                    onChange={(e) => setFilterEndDate(e.target.value)}
+                    className="px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <button
+                  onClick={loadCaptureReports}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition flex items-center gap-2"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Apply
+                </button>
+                {(filterStartDate || filterEndDate) && (
+                  <button
+                    onClick={() => {
+                      setFilterStartDate('')
+                      setFilterEndDate('')
+                    }}
+                    className="px-3 py-2 text-slate-600 hover:text-slate-900 text-sm font-medium"
+                  >
+                    Clear Filter
+                  </button>
+                )}
+                <div className="ml-auto">
+                  <button
+                    onClick={confirmCleanup}
+                    className="px-4 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition flex items-center gap-2"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Cleanup Old Reports
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Reports List */}
+              <div className="lg:col-span-2">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <h2 className="font-bold text-slate-900 flex items-center gap-2">
+                      <Database className="w-5 h-5 text-blue-600" />
+                      Capture Sessions
+                      <span className="ml-2 px-2 py-0.5 bg-slate-100 text-slate-600 text-xs font-bold rounded-full">
+                        {captureReports.length}
+                      </span>
+                    </h2>
+                  </div>
+                  
+                  {captureLoading ? (
+                    <div className="p-12 text-center">
+                      <RefreshCw className="w-8 h-8 text-slate-300 animate-spin mx-auto mb-3" />
+                      <p className="text-slate-500">Loading reports...</p>
+                    </div>
+                  ) : captureReports.length === 0 ? (
+                    <div className="p-12 text-center">
+                      <Database className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                      <p className="text-slate-500 font-medium">No capture reports found</p>
+                      <p className="text-slate-400 text-sm mt-1">Start a capture session from Traffic Monitoring to generate reports</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
+                      {captureReports.map((report) => (
+                        <div
+                          key={report.id}
+                          className="p-4 hover:bg-slate-50 transition cursor-pointer"
+                          onClick={() => viewCaptureReport(report.id)}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 bg-slate-100 rounded-lg">
+                                  <FileText className="w-4 h-4 text-slate-600" />
+                                </div>
+                                <div>
+                                  <div className="font-bold text-slate-900 text-sm">
+                                    {format(parseISO(report.timestamp), 'MMMM d, yyyy')}
+                                  </div>
+                                  <div className="text-xs text-slate-500">
+                                    {format(parseISO(report.timestamp), 'HH:mm:ss')}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-4 mt-3">
+                                <div className="flex items-center gap-1.5 text-xs">
+                                  <Activity className="w-3.5 h-3.5 text-blue-500" />
+                                  <span className="text-slate-600">{report.packet_count.toLocaleString()} packets</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-xs">
+                                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                                  <span className="text-slate-600">{report.alert_count} alerts</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-xs">
+                                  <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                  <span className="text-slate-600">{report.window_minutes} min window</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  viewCaptureReport(report.id)
+                                }}
+                                className="p-2 hover:bg-blue-100 rounded-lg transition"
+                                title="View Details"
+                              >
+                                <Eye className="w-4 h-4 text-blue-600" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  downloadCaptureReport(report.id, 'json')
+                                }}
+                                className="p-2 hover:bg-emerald-100 rounded-lg transition"
+                                title="Download JSON"
+                              >
+                                <Download className="w-4 h-4 text-emerald-600" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  confirmDeleteCapture(report.id)
+                                }}
+                                className="p-2 hover:bg-red-100 rounded-lg transition"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-4 h-4 text-red-600" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Report Detail Panel */}
+              <div className="lg:col-span-1">
+                {viewingCapture ? (
+                  <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden sticky top-8">
+                    <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50">
+                      <h3 className="font-bold text-slate-900">Report Details</h3>
+                      <button
+                        onClick={() => setViewingCapture(null)}
+                        className="p-1 hover:bg-slate-200 rounded transition"
+                      >
+                        <X className="w-4 h-4 text-slate-500" />
+                      </button>
+                    </div>
+                    
+                    <div className="p-6 space-y-6">
+                      {/* Timestamp */}
+                      <div>
+                        <div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1">Generated At</div>
+                        <div className="text-slate-900 font-medium">
+                          {viewingCapture.generated_at && format(parseISO(viewingCapture.generated_at), 'PPpp')}
+                        </div>
+                      </div>
+
+                      {/* Summary Stats */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="p-3 bg-blue-50 rounded-xl">
+                          <div className="text-2xl font-black text-blue-600">{viewingCapture.packet_count?.toLocaleString()}</div>
+                          <div className="text-[10px] uppercase tracking-widest text-blue-400 font-bold">Packets</div>
+                        </div>
+                        <div className="p-3 bg-amber-50 rounded-xl">
+                          <div className="text-2xl font-black text-amber-600">{viewingCapture.alert_count}</div>
+                          <div className="text-[10px] uppercase tracking-widest text-amber-400 font-bold">Alerts</div>
+                        </div>
+                      </div>
+
+                      {/* Packet Stats */}
+                      {viewingCapture.stats && (
+                        <div>
+                          <div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-2">Packet Size</div>
+                          <div className="flex items-center gap-4 text-sm">
+                            <div>
+                              <span className="text-slate-500">Min:</span>{' '}
+                              <span className="font-mono text-slate-900">{viewingCapture.stats.min_packet_size || 0} B</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500">Max:</span>{' '}
+                              <span className="font-mono text-slate-900">{viewingCapture.stats.max_packet_size || 0} B</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500">Avg:</span>{' '}
+                              <span className="font-mono text-slate-900">{Math.round(viewingCapture.stats.avg_packet_size || 0)} B</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Protocol Distribution */}
+                      {viewingCapture.protocol_distribution && Object.keys(viewingCapture.protocol_distribution).length > 0 && (
+                        <div>
+                          <div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-3">Protocols</div>
+                          <div className="h-32">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie
+                                  data={Object.entries(viewingCapture.protocol_distribution).map(([name, value]) => ({
+                                    name,
+                                    value,
+                                    color: PROTOCOL_COLORS[name] || PROTOCOL_COLORS.OTHER
+                                  }))}
+                                  cx="50%"
+                                  cy="50%"
+                                  innerRadius={25}
+                                  outerRadius={45}
+                                  paddingAngle={2}
+                                  dataKey="value"
+                                >
+                                  {Object.entries(viewingCapture.protocol_distribution).map(([name], idx) => (
+                                    <Cell key={idx} fill={PROTOCOL_COLORS[name] || PROTOCOL_COLORS.OTHER} />
+                                  ))}
+                                </Pie>
+                                <Tooltip />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {Object.entries(viewingCapture.protocol_distribution).map(([name, count]) => (
+                              <span
+                                key={name}
+                                className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                                style={{ background: `${PROTOCOL_COLORS[name] || PROTOCOL_COLORS.OTHER}20`, color: PROTOCOL_COLORS[name] || PROTOCOL_COLORS.OTHER }}
+                              >
+                                {name}: {count}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Severity Breakdown */}
+                      {viewingCapture.severity_breakdown && Object.keys(viewingCapture.severity_breakdown).length > 0 && (
+                        <div>
+                          <div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-2">Severity</div>
+                          <div className="space-y-1.5">
+                            {Object.entries(viewingCapture.severity_breakdown).map(([severity, count]) => (
+                              <div key={severity} className="flex items-center justify-between">
+                                <span
+                                  className="px-2 py-0.5 rounded text-[10px] font-bold uppercase"
+                                  style={{ background: `${SEVERITY_COLORS[severity] || '#6b7280'}20`, color: SEVERITY_COLORS[severity] || '#6b7280' }}
+                                >
+                                  {severity}
+                                </span>
+                                <span className="font-bold text-slate-900">{count}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Top Sources */}
+                      {viewingCapture.top_sources && viewingCapture.top_sources.length > 0 && (
+                        <div>
+                          <div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-2">Top Sources</div>
+                          <div className="space-y-1.5 max-h-24 overflow-y-auto">
+                            {viewingCapture.top_sources.slice(0, 5).map((source, idx) => (
+                              <div key={idx} className="flex items-center justify-between text-xs">
+                                <span className="font-mono text-slate-600 truncate">{source.src_ip}</span>
+                                <span className="font-bold text-slate-900">{source.packet_count}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Download Buttons */}
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          onClick={() => downloadCaptureReport(viewingCapture.id, 'json')}
+                          className="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold hover:bg-blue-100 transition flex items-center justify-center gap-1.5"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          JSON
+                        </button>
+                        {viewingCapture.downloads?.packets_csv && (
+                          <button
+                            onClick={() => downloadCaptureReport(viewingCapture.id, 'packets')}
+                            className="px-3 py-2 bg-emerald-50 text-emerald-600 rounded-lg text-xs font-bold hover:bg-emerald-100 transition flex items-center justify-center gap-1.5"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            Packets
+                          </button>
+                        )}
+                        {viewingCapture.downloads?.alerts_csv && (
+                          <button
+                            onClick={() => downloadCaptureReport(viewingCapture.id, 'alerts')}
+                            className="px-3 py-2 bg-amber-50 text-amber-600 rounded-lg text-xs font-bold hover:bg-amber-100 transition flex items-center justify-center gap-1.5"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            Alerts
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center sticky top-8">
+                    <Eye className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                    <p className="text-slate-500 font-medium">Select a report to view details</p>
+                    <p className="text-slate-400 text-sm mt-1">Click on any capture session from the list</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </div>
+
+      {/* Dialogs */}
+      <ConfirmDialog
+        isOpen={dialog.isOpen}
+        onClose={() => setDialog(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={dialog.onConfirm}
+        title={dialog.title}
+        message={dialog.message}
+        confirmLabel={dialog.confirmLabel}
+        confirmStyle={dialog.confirmStyle}
+      />
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        isVisible={toast.isVisible}
+        onClose={() => setToast(prev => ({ ...prev, isVisible: false }))}
+      />
     </div>
   )
 }

@@ -16,6 +16,7 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import ProtectedRoute from './components/ProtectedRoute'
 import { AuthProvider } from './contexts/AuthContext'
+import { CaptureProvider } from './contexts/CaptureContext'
 import './styles/index.css'
 
 
@@ -48,26 +49,28 @@ function App() {
             <Route
               path="*"
               element={
-                <div className="flex min-h-screen bg-gray-100 dark:bg-gray-900">
-                  <Sidebar />
-                  <div className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-20'}`}>
-                    <Routes>
-                      {/* Default to dashboard for authenticated users */}
-                      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                <CaptureProvider>
+                  <div className="flex min-h-screen bg-gray-100 dark:bg-gray-900">
+                    <Sidebar />
+                    <div className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-20'}`}>
+                      <Routes>
+                        {/* Default to dashboard for authenticated users */}
+                        <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
-                      <Route path="/dashboard" element={<DashboardHome />} />
-                      <Route path="/alerts" element={<AlertsIncidents />} />
-                      <Route path="/traffic" element={<TrafficMonitoring />} />
-                      <Route path="/intelligence" element={<AttackIntelligence />} />
-                      <Route path="/engines" element={<DetectionEngines />} />
-                      <Route path="/reports" element={<Reports />} />
-                      <Route path="/settings" element={<Settings />} />
+                        <Route path="/dashboard" element={<DashboardHome />} />
+                        <Route path="/alerts" element={<AlertsIncidents />} />
+                        <Route path="/traffic" element={<TrafficMonitoring />} />
+                        <Route path="/intelligence" element={<AttackIntelligence />} />
+                        <Route path="/engines" element={<DetectionEngines />} />
+                        <Route path="/reports" element={<Reports />} />
+                        <Route path="/settings" element={<Settings />} />
 
-                      {/* Fallback for authenticated users */}
-                      <Route path="*" element={<Navigate to="/dashboard" replace />} />
-                    </Routes>
+                        {/* Fallback for authenticated users */}
+                        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                      </Routes>
+                    </div>
                   </div>
-                </div>
+                </CaptureProvider>
               }
             />
           </Route>
