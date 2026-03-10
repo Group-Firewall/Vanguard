@@ -13,16 +13,18 @@
  */
 
 import React, { useState, useMemo, useRef, useCallback } from 'react'
-import { metricsAPI, firewallAPI, captureAPI } from '../services/api'
+import api, { metricsAPI, firewallAPI } from '../services/api'
 import useWebSocket from '../hooks/useWebSocket'
+import { useCapture } from '../contexts/CaptureContext'
 import ConfirmDialog, { Toast } from '../components/ConfirmDialog'
 import {
-  AreaChart, Area, XAxis, Tooltip, ResponsiveContainer,
+  AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts'
 import {
   Shield, Activity, Search, Pause, Play, Download,
   Zap, AlertCircle, Clock, Globe, Database, Terminal, Server,
   ChevronDown, Lock, CheckCircle, Eye, Ban, FileText, ArrowRight,
+  X, AlertTriangle,
 } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
@@ -32,6 +34,26 @@ import {
 const MAX_PACKET_BUFFER = 100
 const MAX_TRAFFIC_RATE_POINTS = 20
 const MAX_WARNINGS = 5
+
+// Protocol colors for charts
+const PROTOCOL_COLORS = {
+  TCP: '#3b82f6',
+  UDP: '#10b981',
+  ICMP: '#f59e0b',
+  HTTP: '#8b5cf6',
+  HTTPS: '#ec4899',
+  DNS: '#06b6d4',
+  SSH: '#ef4444',
+  OTHER: '#6b7280'
+}
+
+const SEVERITY_COLORS = {
+  critical: '#ef4444',
+  high: '#f97316',
+  medium: '#f59e0b',
+  low: '#10b981',
+  info: '#6b7280'
+}
 
 // ---------------------------------------------------------------------------
 // Protocol badge colours
@@ -54,6 +76,15 @@ function protocolBadgeClass(protocol) {
 const STORAGE_KEY = 'vanguard_last_capture'
 
 function TrafficMonitoring() {
+  // Use global capture context for status that persists across pages
+  const { 
+    captureStatus, 
+    isCapturing, 
+    startCapture: contextStartCapture, 
+    stopCapture: contextStopCapture,
+    refreshStatus 
+  } = useCapture()
+
   // Packet buffer displayed in the live table - restore from localStorage
   const [packets, setPackets] = useState(() => {
     try {
@@ -64,12 +95,6 @@ function TrafficMonitoring() {
       }
     } catch (e) { /* ignore */ }
     return []
-  })
-
-  // Capture status state (moved from Dashboard)
-  const [captureStatus, setCaptureStatus] = useState({
-    is_capturing: false,
-    packets_captured: 0,
   })
 
   // UI control state
@@ -118,6 +143,10 @@ function TrafficMonitoring() {
   })
   const [toast, setToast] = useState({ isVisible: false, message: '', type: 'success' })
 
+  // Capture Report Modal State
+  const [captureReport, setCaptureReport] = useState(null)
+  const [showReportModal, setShowReportModal] = useState(false)
+
   // Show toast notification
   const showToast = (message, type = 'success') => {
     setToast({ isVisible: true, message, type })
@@ -141,35 +170,18 @@ function TrafficMonitoring() {
   }, [packets, trafficRate, liveMetrics])
 
   // ------------------------------------------------------------------
-  // Capture Status Management (Moved from Dashboard)
+  // Capture Status from Global Context (persists across pages)
   // ------------------------------------------------------------------
-
-  React.useEffect(() => {
-    // Poll capture status
-    const fetchStatus = async () => {
-      try {
-        const res = await captureAPI.status()
-        setCaptureStatus(res.data)
-      } catch (err) {
-        // quiet fail
-      }
-    }
-    fetchStatus()
-    const interval = setInterval(fetchStatus, 2000)
-    return () => clearInterval(interval)
-  }, [])
 
   const handleStartCapture = async () => {
     try {
-      await captureAPI.start()
+      await contextStartCapture()
       // Clear previous capture data for fresh start
       setPackets([])
       setTrafficRate([])
       setWarnings([])
       setLiveMetrics(null)
       localStorage.removeItem(STORAGE_KEY)
-      // Optimistic update
-      setCaptureStatus(prev => ({ ...prev, is_capturing: true }))
       showToast('Packet capture started successfully', 'success')
     } catch (err) {
       showToast(`Failed to start capture: ${err.message}`, 'error')
@@ -185,20 +197,71 @@ function TrafficMonitoring() {
       confirmText: 'Stop Capture',
       isLoading: false,
       onConfirm: async () => {
-        // Optimistic UI update - change button immediately
-        setCaptureStatus(prev => ({ ...prev, is_capturing: false }))
         setConfirmDialog(prev => ({ ...prev, isOpen: false }))
         showToast('Stopping capture...', 'info')
         try {
-          await captureAPI.stop()
+          await contextStopCapture()
           showToast('Packet capture stopped successfully', 'success')
+          
+          // Fetch the latest capture report
+          try {
+            const reportsResponse = await api.get('/reports/captures', { params: { limit: 1 } })
+            if (reportsResponse.data.reports && reportsResponse.data.reports.length > 0) {
+              const latestReport = reportsResponse.data.reports[0]
+              const reportDetails = await api.get(`/reports/captures/${latestReport.id}`)
+              setCaptureReport(reportDetails.data)
+              setShowReportModal(true)
+            }
+          } catch (reportErr) {
+            console.error('Failed to fetch capture report:', reportErr)
+          }
         } catch (err) {
-          // Revert on failure
-          setCaptureStatus(prev => ({ ...prev, is_capturing: true }))
           showToast(`Failed to stop capture: ${err.message}`, 'error')
         }
       },
     })
+  }
+
+  // Download capture report file
+  const downloadCaptureReport = (reportId, fileType) => {
+    const url = `${api.defaults.baseURL}/reports/captures/${reportId}/download/${fileType}`
+    const token = localStorage.getItem('token')
+    
+    fetch(url, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.blob())
+      .then(blob => {
+        const downloadUrl = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = downloadUrl
+        a.download = `capture_report_${reportId}.${fileType === 'json' ? 'json' : 'csv'}`
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        window.URL.revokeObjectURL(downloadUrl)
+        showToast(`Downloaded ${fileType} report`, 'success')
+      })
+      .catch(() => showToast('Download failed', 'error'))
+  }
+
+  // Save report locally (all files)
+  const saveReportLocally = async () => {
+    if (!captureReport) return
+    
+    // Download all available files
+    downloadCaptureReport(captureReport.id, 'json')
+    
+    // Add small delay between downloads
+    await new Promise(r => setTimeout(r, 300))
+    if (captureReport.downloads?.packets_csv) {
+      downloadCaptureReport(captureReport.id, 'packets')
+    }
+    
+    await new Promise(r => setTimeout(r, 300))
+    if (captureReport.downloads?.alerts_csv) {
+      downloadCaptureReport(captureReport.id, 'alerts')
+    }
   }
 
   // ------------------------------------------------------------------
@@ -812,6 +875,210 @@ function TrafficMonitoring() {
           </div>
         </div>
       </div>
+
+      {/* Capture Report Modal */}
+      {showReportModal && captureReport && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-600 rounded-xl">
+                  <FileText className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="font-bold text-slate-900">Capture Report Generated</h2>
+                  <p className="text-xs text-slate-500">Session completed successfully</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowReportModal(false)}
+                className="p-2 hover:bg-slate-200 rounded-lg transition"
+              >
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 overflow-y-auto max-h-[60vh]">
+              {/* Stats Overview */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="p-4 bg-blue-50 rounded-2xl">
+                  <div className="text-2xl font-black text-blue-600">{captureReport.packet_count?.toLocaleString()}</div>
+                  <div className="text-[10px] uppercase tracking-widest text-blue-400 font-bold">Packets Captured</div>
+                </div>
+                <div className="p-4 bg-amber-50 rounded-2xl">
+                  <div className="text-2xl font-black text-amber-600">{captureReport.alert_count}</div>
+                  <div className="text-[10px] uppercase tracking-widest text-amber-400 font-bold">Alerts Generated</div>
+                </div>
+                <div className="p-4 bg-emerald-50 rounded-2xl">
+                  <div className="text-2xl font-black text-emerald-600">{captureReport.window_minutes || 10}</div>
+                  <div className="text-[10px] uppercase tracking-widest text-emerald-400 font-bold">Minutes Duration</div>
+                </div>
+                <div className="p-4 bg-purple-50 rounded-2xl">
+                  <div className="text-2xl font-black text-purple-600">
+                    {captureReport.protocol_distribution ? Object.keys(captureReport.protocol_distribution).length : 0}
+                  </div>
+                  <div className="text-[10px] uppercase tracking-widest text-purple-400 font-bold">Protocols Seen</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Protocol Distribution */}
+                {captureReport.protocol_distribution && Object.keys(captureReport.protocol_distribution).length > 0 && (
+                  <div className="bg-slate-50 rounded-2xl p-5">
+                    <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+                      <Globe className="w-4 h-4 text-blue-500" />
+                      Protocol Distribution
+                    </h3>
+                    <div className="h-32 mb-3">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={Object.entries(captureReport.protocol_distribution).map(([name, value]) => ({
+                              name,
+                              value
+                            }))}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={25}
+                            outerRadius={50}
+                            paddingAngle={2}
+                            dataKey="value"
+                          >
+                            {Object.entries(captureReport.protocol_distribution).map(([name], idx) => (
+                              <Cell key={idx} fill={PROTOCOL_COLORS[name] || PROTOCOL_COLORS.OTHER} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {Object.entries(captureReport.protocol_distribution).map(([name, count]) => (
+                        <span
+                          key={name}
+                          className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                          style={{ background: `${PROTOCOL_COLORS[name] || PROTOCOL_COLORS.OTHER}20`, color: PROTOCOL_COLORS[name] || PROTOCOL_COLORS.OTHER }}
+                        >
+                          {name}: {count}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Severity Breakdown */}
+                <div className="bg-slate-50 rounded-2xl p-5">
+                  <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-500" />
+                    Alert Severity
+                  </h3>
+                  {captureReport.severity_breakdown && Object.keys(captureReport.severity_breakdown).length > 0 ? (
+                    <div className="space-y-3">
+                      {Object.entries(captureReport.severity_breakdown).map(([severity, count]) => (
+                        <div key={severity} className="flex items-center justify-between">
+                          <span
+                            className="px-2 py-1 rounded text-xs font-bold uppercase"
+                            style={{ background: `${SEVERITY_COLORS[severity] || '#6b7280'}20`, color: SEVERITY_COLORS[severity] || '#6b7280' }}
+                          >
+                            {severity}
+                          </span>
+                          <span className="font-bold text-slate-900">{count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-slate-400 text-sm py-4 text-center">No alerts in this session</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Packet Stats */}
+              {captureReport.stats && (
+                <div className="mt-6 bg-slate-50 rounded-2xl p-5">
+                  <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
+                    <Database className="w-4 h-4 text-purple-500" />
+                    Packet Statistics
+                  </h3>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Min Size</div>
+                      <div className="text-lg font-bold text-slate-900">{captureReport.stats.min_packet_size || 0} B</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Max Size</div>
+                      <div className="text-lg font-bold text-slate-900">{captureReport.stats.max_packet_size || 0} B</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Avg Size</div>
+                      <div className="text-lg font-bold text-slate-900">{Math.round(captureReport.stats.avg_packet_size || 0)} B</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Top Sources */}
+              {captureReport.top_sources && captureReport.top_sources.length > 0 && (
+                <div className="mt-6 bg-slate-50 rounded-2xl p-5">
+                  <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
+                    <Server className="w-4 h-4 text-emerald-500" />
+                    Top Sources
+                  </h3>
+                  <div className="space-y-2">
+                    {captureReport.top_sources.slice(0, 5).map((source, idx) => (
+                      <div key={idx} className="flex items-center justify-between py-1.5 border-b border-slate-200 last:border-0">
+                        <span className="font-mono text-sm text-slate-600">{source.src_ip}</span>
+                        <span className="font-bold text-slate-900">{source.packet_count} packets</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer - Actions */}
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50">
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-slate-500">
+                  Report stored at: <span className="font-mono">reports/captures/</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setShowReportModal(false)}
+                    className="px-4 py-2 text-slate-600 hover:text-slate-900 text-sm font-medium"
+                  >
+                    Close
+                  </button>
+                  <button
+                    onClick={() => downloadCaptureReport(captureReport.id, 'json')}
+                    className="px-4 py-2 bg-blue-100 text-blue-600 rounded-lg text-sm font-bold hover:bg-blue-200 transition flex items-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    JSON
+                  </button>
+                  {captureReport.downloads?.packets_csv && (
+                    <button
+                      onClick={() => downloadCaptureReport(captureReport.id, 'packets')}
+                      className="px-4 py-2 bg-emerald-100 text-emerald-600 rounded-lg text-sm font-bold hover:bg-emerald-200 transition flex items-center gap-2"
+                    >
+                      <Download className="w-4 h-4" />
+                      Packets CSV
+                    </button>
+                  )}
+                  <button
+                    onClick={saveReportLocally}
+                    className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-bold hover:bg-slate-800 transition flex items-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    Save All
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirmation Dialog */}
       <ConfirmDialog
