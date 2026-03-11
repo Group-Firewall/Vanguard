@@ -421,9 +421,7 @@ function TrafficMonitoring() {
     ?? trafficRate[trafficRate.length - 1]?.count
     ?? 0
 
-  // ------------------------------------------------------------------
   // Render
-  // ------------------------------------------------------------------
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 p-6 font-['Inter']">
