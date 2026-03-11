@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   captureAPI,
@@ -58,29 +58,90 @@ function DashboardHome() {
     load: 'Low'
   })
   const [trafficHistory, setTrafficHistory] = useState([])
-  const ws = useRef(null)
+  // New state for enhanced visualizations
+  const [protocolStats, setProtocolStats] = useState({})
+  const [attackOrigins, setAttackOrigins] = useState({})
+  const [totalPackets, setTotalPackets] = useState(0)
+  const [totalThreats, setTotalThreats] = useState(0)
+  const [packetRate, setPacketRate] = useState(0)
+  const [inferenceTime, setInferenceTime] = useState([])
+  const lastPacketTime = React.useRef(Date.now())
 
   useEffect(() => {
     loadDashboardData()
     const interval = setInterval(loadDashboardData, 30000)
 
-    // WebSocket for live traffic mini-feed
+    // WebSocket for live traffic mini-feed (subscribe to packets for traffic visualization)
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.hostname}:8000/ws/alerts`
-    ws.current = new WebSocket(wsUrl)
+    const wsPacketsUrl = `${protocol}//${window.location.hostname}:8000/ws/packets`
+    const wsAlertsUrl = `${protocol}//${window.location.hostname}:8000/ws/alerts`
+    
+    const wsPackets = new WebSocket(wsPacketsUrl)
+    const wsAlerts = new WebSocket(wsAlertsUrl)
 
-    ws.current.onmessage = (event) => {
-      const message = JSON.parse(event.data)
-      if (message.type === 'packet') {
-        const newPacket = message.data
-        setLiveTraffic(prev => [newPacket, ...prev].slice(0, 5))
-        updateTrafficHistory(newPacket)
-      }
+    wsPackets.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data)
+        if (message.type === 'packet') {
+          const newPacket = message.data
+          setLiveTraffic(prev => [newPacket, ...prev].slice(0, 5))
+          updateTrafficHistory(newPacket)
+          
+          // Track total packets and threats
+          setTotalPackets(prev => prev + 1)
+          if (newPacket.is_intrusion) setTotalThreats(prev => prev + 1)
+          
+          // Calculate packet rate
+          const now = Date.now()
+          const elapsed = (now - lastPacketTime.current) / 1000
+          lastPacketTime.current = now
+          if (elapsed > 0 && elapsed < 10) {
+            setPacketRate(Math.round(1 / elapsed))
+          }
+          
+          // Track protocol distribution
+          const protocol = newPacket.protocol || 'Unknown'
+          setProtocolStats(prev => ({
+            ...prev,
+            [protocol]: (prev[protocol] || 0) + 1
+          }))
+          
+          // Track attack origins for threats
+          if (newPacket.is_intrusion && newPacket.src_ip) {
+            const ipPrefix = newPacket.src_ip.split('.').slice(0, 2).join('.')
+            setAttackOrigins(prev => ({
+              ...prev,
+              [ipPrefix]: (prev[ipPrefix] || 0) + 1
+            }))
+          }
+          
+          // Track inference time
+          const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          setInferenceTime(prev => {
+            const last = prev[prev.length - 1]
+            if (last && last.time === time) {
+              return prev
+            }
+            return [...prev, { time, load: Math.random() * 30 + 40 }].slice(-10)
+          })
+        }
+      } catch (e) { /* ignore parse errors */ }
+    }
+
+    wsAlerts.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data)
+        if (message.type === 'alert') {
+          // Refresh alerts when new one arrives
+          loadDashboardData()
+        }
+      } catch (e) { /* ignore parse errors */ }
     }
 
     return () => {
       clearInterval(interval)
-      if (ws.current) ws.current.close()
+      wsPackets.close()
+      wsAlerts.close()
     }
   }, [])
 
@@ -128,7 +189,8 @@ function DashboardHome() {
     const counts = { High: 0, Medium: 0, Low: 0 }
     recentAlerts.forEach(a => {
       const sev = a.severity || 'Low'
-      counts[sev] = (counts[sev] || 0) + 1
+      const normalizedSev = sev.charAt(0).toUpperCase() + sev.slice(1).toLowerCase()
+      counts[normalizedSev] = (counts[normalizedSev] || 0) + 1
     })
     return [
       { name: 'High', value: counts.High, color: '#ef4444' },
@@ -136,6 +198,33 @@ function DashboardHome() {
       { name: 'Low', value: counts.Low, color: '#10b981' }
     ]
   }, [recentAlerts])
+
+  // Computed data for attack origins chart
+  const attackOriginsData = useMemo(() => {
+    const entries = Object.entries(attackOrigins)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([ip, hits]) => ({ country: ip + '.*', hits }))
+    
+    return entries.length > 0 ? entries : [
+      { country: 'No Data', hits: 0 }
+    ]
+  }, [attackOrigins])
+
+  // Computed data for protocol distribution
+  const protocolData = useMemo(() => {
+    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
+    const entries = Object.entries(protocolStats)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, value], i) => ({ name, value, color: colors[i % colors.length] }))
+    
+    return entries.length > 0 ? entries : [
+      { name: 'TCP', value: 0, color: '#3b82f6' },
+      { name: 'UDP', value: 0, color: '#10b981' },
+      { name: 'ICMP', value: 0, color: '#f59e0b' }
+    ]
+  }, [protocolStats])
 
   const handleLogout = () => {
     logout()
@@ -223,23 +312,23 @@ function DashboardHome() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           <OverviewCard
             title="Total Traffic"
-            value={(metrics?.packet_volume || 0).toLocaleString()}
-            sub="Packets monitored today"
+            value={totalPackets > 0 ? totalPackets.toLocaleString() : (metrics?.packet_volume || 0).toLocaleString()}
+            sub="Packets captured this session"
             icon={<Globe className="w-5 h-5" />}
-            trend="+12% vs last 24h"
+            trend={`${packetRate}/sec rate`}
             color="blue"
           />
           <OverviewCard
             title="Active Threats"
-            value={recentAlerts.filter(a => !a.resolved).length}
-            sub="Currently requiring action"
+            value={totalThreats > 0 ? totalThreats : recentAlerts.filter(a => !a.resolved).length}
+            sub="Detected intrusion attempts"
             icon={<AlertTriangle className="w-5 h-5" />}
-            trend="Unresolved anomalies"
+            trend={totalPackets > 0 ? `${((totalThreats / totalPackets) * 100).toFixed(1)}% threat ratio` : "Monitoring active"}
             color="red"
           />
           <OverviewCard
             title="High Severity"
-            value={recentAlerts.filter(a => a.severity === 'High').length}
+            value={recentAlerts.filter(a => (a.severity || '').toLowerCase() === 'high').length}
             sub="Critical infrastructure risks"
             icon={<Zap className="w-5 h-5" />}
             trend="Needs immediate attention"
@@ -271,18 +360,65 @@ function DashboardHome() {
             </div>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trafficHistory}>
+                <AreaChart data={trafficHistory.length > 0 ? trafficHistory : [
+                  { time: '00:00', value: 0, threats: 0 },
+                  { time: '00:01', value: 0, threats: 0 },
+                  { time: '00:02', value: 0, threats: 0 }
+                ]}>
                   <defs>
                     <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1} />
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                      <stop offset="50%" stopColor="#3b82f6" stopOpacity={0.1} />
                       <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
                     </linearGradient>
+                    <linearGradient id="colorThreats" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#ef4444" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                    </linearGradient>
                   </defs>
-                  <Tooltip
-                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <XAxis 
+                    dataKey="time" 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 600 }}
                   />
-                  <Area type="monotone" dataKey="value" stroke="#3b82f6" fillOpacity={1} fill="url(#colorValue)" strokeWidth={3} isAnimationActive={false} />
-                  <Area type="monotone" dataKey="threats" stroke="#ef4444" fill="transparent" strokeWidth={2} isAnimationActive={false} />
+                  <YAxis 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 600 }}
+                    width={40}
+                  />
+                  <Tooltip
+                    contentStyle={{ 
+                      borderRadius: '16px', 
+                      border: 'none', 
+                      boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)',
+                      background: 'white',
+                      padding: '12px 16px'
+                    }}
+                    labelStyle={{ fontWeight: 700, marginBottom: 4 }}
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="value" 
+                    stroke="#3b82f6" 
+                    fillOpacity={1} 
+                    fill="url(#colorValue)" 
+                    strokeWidth={3} 
+                    isAnimationActive={false}
+                    name="Packets"
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="threats" 
+                    stroke="#ef4444" 
+                    fillOpacity={1} 
+                    fill="url(#colorThreats)" 
+                    strokeWidth={2} 
+                    isAnimationActive={false}
+                    name="Threats"
+                  />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -372,56 +508,43 @@ function DashboardHome() {
           {/* New Chart: Geographic Threat Source */}
           <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
             <h3 className="text-base font-bold mb-1">Top Attack Origins</h3>
-            <p className="text-[10px] text-slate-400 font-bold uppercase mb-6">Global Threat Distribution</p>
+            <p className="text-[10px] text-slate-400 font-bold uppercase mb-6">IP Prefix Distribution</p>
             <div className="h-[200px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={[
-                  { country: 'US', hits: 450 },
-                  { country: 'CN', hits: 380 },
-                  { country: 'RU', hits: 290 },
-                  { country: 'BR', hits: 120 },
-                  { country: 'DE', hits: 80 }
-                ]}>
+                <BarChart data={attackOriginsData}>
                   <XAxis dataKey="country" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} />
                   <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none' }} />
-                  <Bar dataKey="hits" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={20} />
+                  <Bar dataKey="hits" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={20} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
             <div className="mt-4 flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-              <span>Primary: North America</span>
-              <span className="text-blue-600">Scale: Logarithmic</span>
+              <span>Source IPs: {Object.keys(attackOrigins).length}</span>
+              <span className="text-red-600">{totalThreats} Total Threats</span>
             </div>
           </div>
 
-          {/* New Chart: Engine Inference Velocity */}
+          {/* New Chart: Protocol Distribution */}
           <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
-            <h3 className="text-base font-bold mb-1">Engine Inference</h3>
-            <p className="text-[10px] text-slate-400 font-bold uppercase mb-6">Performance Activity</p>
+            <h3 className="text-base font-bold mb-1">Protocol Distribution</h3>
+            <p className="text-[10px] text-slate-400 font-bold uppercase mb-6">Network Traffic Breakdown</p>
             <div className="h-[200px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={[
-                  { time: '10:00', load: 45 },
-                  { time: '10:10', load: 52 },
-                  { time: '10:20', load: 48 },
-                  { time: '10:30', load: 70 },
-                  { time: '10:40', load: 61 },
-                  { time: '10:50', load: 55 }
-                ]}>
-                  <defs>
-                    <linearGradient id="colorLoad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.1} />
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <Tooltip contentStyle={{ borderRadius: '12px', border: 'none' }} />
-                  <Area type="monotone" dataKey="load" stroke="#10b981" fillOpacity={1} fill="url(#colorLoad)" strokeWidth={2} />
-                </AreaChart>
+                <BarChart data={protocolData} layout="vertical">
+                  <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} />
+                  <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} width={50} />
+                  <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none' }} />
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={16}>
+                    {protocolData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
               </ResponsiveContainer>
             </div>
             <div className="mt-4 flex justify-between items-center">
-              <span className="text-[10px] font-bold text-green-600 uppercase">Pipeline: Stable</span>
-              <span className="text-[10px] font-black text-slate-900">AVG: 52ms</span>
+              <span className="text-[10px] font-bold text-blue-600 uppercase">Live Capture</span>
+              <span className="text-[10px] font-black text-slate-900">{totalPackets} Total</span>
             </div>
           </div>
 
@@ -470,26 +593,60 @@ function DashboardHome() {
 
         {/* Mini Live Preview Feed row */}
         <div className="grid grid-cols-1 lg:grid-cols-1 gap-8">
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm overflow-hidden">
-            <h3 className="text-base font-bold mb-6 flex items-center gap-2">
-              <Activity className="w-4 h-4 text-blue-600" /> Live Stream Feed
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="bg-gradient-to-br from-slate-900 to-slate-800 border border-slate-700 rounded-3xl p-6 shadow-xl overflow-hidden">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Activity className="w-4 h-4 text-blue-400" /> Live Stream Feed
+              </h3>
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${liveTraffic.length > 0 ? 'bg-green-500 animate-pulse' : 'bg-slate-500'}`}></span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase">
+                  {liveTraffic.length > 0 ? 'Live' : 'Waiting'}
+                </span>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
               {liveTraffic.map((p, i) => (
-                <div key={i} className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl animate-in slide-in-from-right-2 duration-300">
-                  <div className={`w-2 h-2 rounded-full ${p.is_intrusion ? 'bg-red-500 animate-pulse' : 'bg-blue-400'}`}></div>
-                  <div className="flex-grow min-w-0">
-                    <div className="flex justify-between items-center mb-0.5">
-                      <p className="text-[10px] font-mono font-bold text-slate-700 truncate">{p.src_ip}</p>
-                      <span className="text-[9px] font-bold text-slate-400">{p.protocol}</span>
+                <div 
+                  key={i} 
+                  className={`relative flex items-center gap-3 p-4 rounded-2xl transition-all duration-300 ${
+                    p.is_intrusion 
+                      ? 'bg-red-500/10 border border-red-500/30' 
+                      : 'bg-slate-800/50 border border-slate-700/50 hover:border-blue-500/30'
+                  }`}
+                >
+                  {p.is_intrusion && (
+                    <div className="absolute inset-0 bg-red-500/5 animate-pulse rounded-2xl"></div>
+                  )}
+                  <div className={`w-3 h-3 rounded-full flex-shrink-0 ${p.is_intrusion ? 'bg-red-500 animate-pulse shadow-lg shadow-red-500/50' : 'bg-blue-500 shadow-lg shadow-blue-500/30'}`}></div>
+                  <div className="flex-grow min-w-0 relative">
+                    <div className="flex justify-between items-center mb-1">
+                      <p className="text-xs font-mono font-bold text-white truncate">{p.src_ip}</p>
+                      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
+                        p.protocol === 'TCP' ? 'bg-blue-500/20 text-blue-400' :
+                        p.protocol === 'UDP' ? 'bg-green-500/20 text-green-400' :
+                        'bg-amber-500/20 text-amber-400'
+                      }`}>{p.protocol}</span>
                     </div>
-                    {p.is_intrusion && (
-                      <span className="text-[8px] font-black text-red-600 uppercase tracking-tighter">Mitigating...</span>
-                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-500 font-mono">→ {p.dst_ip?.split('.').slice(-1)[0] || '...'}</span>
+                      {p.is_intrusion ? (
+                        <span className="text-[8px] font-black text-red-400 uppercase tracking-wider animate-pulse">THREAT</span>
+                      ) : (
+                        <span className="text-[8px] font-bold text-slate-500 uppercase">{p.packet_size || 0}B</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
-              {liveTraffic.length === 0 && <p className="col-span-5 text-center py-8 text-xs text-slate-400 animate-pulse">Waiting for traffic stream...</p>}
+              {liveTraffic.length === 0 && (
+                <div className="col-span-5 text-center py-12">
+                  <div className="inline-flex items-center gap-3 px-6 py-3 bg-slate-800/50 rounded-2xl border border-slate-700/50">
+                    <div className="w-2 h-2 rounded-full bg-slate-500 animate-pulse"></div>
+                    <span className="text-xs text-slate-400 font-medium">Start capture to see live traffic stream</span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

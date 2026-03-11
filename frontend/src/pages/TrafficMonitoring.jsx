@@ -13,14 +13,18 @@
  */
 
 import React, { useState, useMemo, useRef, useCallback } from 'react'
-import { metricsAPI, firewallAPI, captureAPI } from '../services/api'
+import api, { metricsAPI, firewallAPI } from '../services/api'
 import useWebSocket from '../hooks/useWebSocket'
+import { useCapture } from '../contexts/CaptureContext'
+import ConfirmDialog, { Toast } from '../components/ConfirmDialog'
 import {
-  AreaChart, Area, XAxis, Tooltip, ResponsiveContainer,
+  AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts'
 import {
   Shield, Activity, Search, Pause, Play, Download,
   Zap, AlertCircle, Clock, Globe, Database, Terminal, Server,
+  ChevronDown, Lock, CheckCircle, Eye, Ban, FileText, ArrowRight,
+  X, AlertTriangle,
 } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
@@ -30,6 +34,26 @@ import {
 const MAX_PACKET_BUFFER = 100
 const MAX_TRAFFIC_RATE_POINTS = 20
 const MAX_WARNINGS = 5
+
+// Protocol colors for charts
+const PROTOCOL_COLORS = {
+  TCP: '#3b82f6',
+  UDP: '#10b981',
+  ICMP: '#f59e0b',
+  HTTP: '#8b5cf6',
+  HTTPS: '#ec4899',
+  DNS: '#06b6d4',
+  SSH: '#ef4444',
+  OTHER: '#6b7280'
+}
+
+const SEVERITY_COLORS = {
+  critical: '#ef4444',
+  high: '#f97316',
+  medium: '#f59e0b',
+  low: '#10b981',
+  info: '#6b7280'
+}
 
 // ---------------------------------------------------------------------------
 // Protocol badge colours
@@ -45,39 +69,32 @@ function protocolBadgeClass(protocol) {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function ArrowRight(props) {
-  return (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
-      fill="none" stroke="currentColor" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round">
-      <path d="M5 12h14" /><path d="m12 5 7 7-7 7" />
-    </svg>
-  )
-}
-
-function CheckCircle(props) {
-  return (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
-      fill="none" stroke="currentColor" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round">
-      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-      <polyline points="22 4 12 14.01 9 11.01" />
-    </svg>
-  )
-}
-
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
-function TrafficMonitoring() {
-  // Packet buffer displayed in the live table
-  const [packets, setPackets] = useState([])
+const STORAGE_KEY = 'vanguard_last_capture'
 
-  // Capture status state (moved from Dashboard)
-  const [captureStatus, setCaptureStatus] = useState({
-    is_capturing: false,
-    packets_captured: 0,
+function TrafficMonitoring() {
+  // Use global capture context for status that persists across pages
+  const { 
+    captureStatus, 
+    isCapturing, 
+    startCapture: contextStartCapture, 
+    stopCapture: contextStopCapture,
+    refreshStatus 
+  } = useCapture()
+
+  // Packet buffer displayed in the live table - restore from localStorage
+  const [packets, setPackets] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        return parsed.packets || []
+      }
+    } catch (e) { /* ignore */ }
+    return []
   })
 
   // UI control state
@@ -86,51 +103,164 @@ function TrafficMonitoring() {
   const [filterProtocol, setFilterProtocol] = useState('all')
   const [filterIntrusion, setFilterIntrusion] = useState('all')
 
-  // Derived visualisation data
-  const [trafficRate, setTrafficRate] = useState([])
+  // Derived visualisation data - restore from localStorage
+  const [trafficRate, setTrafficRate] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        return parsed.trafficRate || []
+      }
+    } catch (e) { /* ignore */ }
+    return []
+  })
   const [warnings, setWarnings] = useState([])
-  const [liveMetrics, setLiveMetrics] = useState(null)
+  const [liveMetrics, setLiveMetrics] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        return parsed.liveMetrics || null
+      }
+    } catch (e) { /* ignore */ }
+    return null
+  })
 
   // Ref-based pause flag avoids re-subscribing to WebSocket on toggle
   const isPausedRef = useRef(false)
   isPausedRef.current = isPaused
 
-  // ------------------------------------------------------------------
-  // Capture Status Management (Moved from Dashboard)
-  // ------------------------------------------------------------------
+  // Action menu and dialogs state
+  const [openActionId, setOpenActionId] = useState(null)
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'info',
+    confirmText: 'Confirm',
+    onConfirm: () => {},
+    isLoading: false,
+  })
+  const [toast, setToast] = useState({ isVisible: false, message: '', type: 'success' })
 
+  // Capture Report Modal State
+  const [captureReport, setCaptureReport] = useState(null)
+  const [showReportModal, setShowReportModal] = useState(false)
+
+  // Show toast notification
+  const showToast = (message, type = 'success') => {
+    setToast({ isVisible: true, message, type })
+  }
+
+  // Save capture data to localStorage when it changes (debounced)
   React.useEffect(() => {
-    // Poll capture status
-    const fetchStatus = async () => {
-      try {
-        const res = await captureAPI.status()
-        setCaptureStatus(res.data)
-      } catch (err) {
-        // quiet fail
+    const saveTimeout = setTimeout(() => {
+      if (packets.length > 0 || liveMetrics) {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            packets: packets.slice(0, 50), // Save last 50 packets to avoid storage limits
+            trafficRate: trafficRate.slice(-20),
+            liveMetrics,
+            savedAt: new Date().toISOString()
+          }))
+        } catch (e) { /* ignore storage errors */ }
       }
-    }
-    fetchStatus()
-    const interval = setInterval(fetchStatus, 2000)
-    return () => clearInterval(interval)
-  }, [])
+    }, 1000) // Debounce saves
+    return () => clearTimeout(saveTimeout)
+  }, [packets, trafficRate, liveMetrics])
+
+  // ------------------------------------------------------------------
+  // Capture Status from Global Context (persists across pages)
+  // ------------------------------------------------------------------
 
   const handleStartCapture = async () => {
     try {
-      await captureAPI.start()
-      // Optimistic update
-      setCaptureStatus(prev => ({ ...prev, is_capturing: true }))
+      await contextStartCapture()
+      // Clear previous capture data for fresh start
+      setPackets([])
+      setTrafficRate([])
+      setWarnings([])
+      setLiveMetrics(null)
+      localStorage.removeItem(STORAGE_KEY)
+      showToast('Packet capture started successfully', 'success')
     } catch (err) {
-      alert(`Failed to start capture: ${err.message}`)
+      showToast(`Failed to start capture: ${err.message}`, 'error')
     }
   }
 
   const handleStopCapture = async () => {
-    try {
-      await captureAPI.stop()
-      // Optimistic update
-      setCaptureStatus(prev => ({ ...prev, is_capturing: false }))
-    } catch (err) {
-      alert(`Failed to stop capture: ${err.message}`)
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Stop Capture',
+      message: 'Are you sure you want to stop the packet capture? Current session data will be preserved.',
+      type: 'warning',
+      confirmText: 'Stop Capture',
+      isLoading: false,
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }))
+        showToast('Stopping capture...', 'info')
+        try {
+          await contextStopCapture()
+          showToast('Packet capture stopped successfully', 'success')
+          
+          // Fetch the latest capture report
+          try {
+            const reportsResponse = await api.get('/reports/captures', { params: { limit: 1 } })
+            if (reportsResponse.data.reports && reportsResponse.data.reports.length > 0) {
+              const latestReport = reportsResponse.data.reports[0]
+              const reportDetails = await api.get(`/reports/captures/${latestReport.id}`)
+              setCaptureReport(reportDetails.data)
+              setShowReportModal(true)
+            }
+          } catch (reportErr) {
+            console.error('Failed to fetch capture report:', reportErr)
+          }
+        } catch (err) {
+          showToast(`Failed to stop capture: ${err.message}`, 'error')
+        }
+      },
+    })
+  }
+
+  // Download capture report file
+  const downloadCaptureReport = (reportId, fileType) => {
+    const url = `${api.defaults.baseURL}/reports/captures/${reportId}/download/${fileType}`
+    const token = localStorage.getItem('token')
+    
+    fetch(url, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.blob())
+      .then(blob => {
+        const downloadUrl = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = downloadUrl
+        a.download = `capture_report_${reportId}.${fileType === 'json' ? 'json' : 'csv'}`
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        window.URL.revokeObjectURL(downloadUrl)
+        showToast(`Downloaded ${fileType} report`, 'success')
+      })
+      .catch(() => showToast('Download failed', 'error'))
+  }
+
+  // Save report locally (all files)
+  const saveReportLocally = async () => {
+    if (!captureReport) return
+    
+    // Download all available files
+    downloadCaptureReport(captureReport.id, 'json')
+    
+    // Add small delay between downloads
+    await new Promise(r => setTimeout(r, 300))
+    if (captureReport.downloads?.packets_csv) {
+      downloadCaptureReport(captureReport.id, 'packets')
+    }
+    
+    await new Promise(r => setTimeout(r, 300))
+    if (captureReport.downloads?.alerts_csv) {
+      downloadCaptureReport(captureReport.id, 'alerts')
     }
   }
 
@@ -197,17 +327,83 @@ function TrafficMonitoring() {
   useWebSocket('/ws/metrics', handleMetricsMessage)
 
   // ------------------------------------------------------------------
-  // Firewall action
+  // Packet Actions
   // ------------------------------------------------------------------
 
-  const handleBlockIP = async (ip) => {
-    try {
-      await firewallAPI.block(ip)
-      alert(`IP ${ip} has been blocked at the firewall level.`)
-    } catch {
-      alert('Failed to block IP. Check the console for details.')
-    }
+  const handleBlockIP = (ip) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Block IP Address',
+      message: `Are you sure you want to block IP address ${ip}? This will prevent all traffic from this source.`,
+      type: 'danger',
+      confirmText: 'Block IP',
+      isLoading: false,
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false })) // Close immediately
+        setOpenActionId(null)
+        try {
+          await firewallAPI.block(ip)
+          showToast(`IP ${ip} has been blocked successfully`, 'success')
+        } catch (err) {
+          showToast('Failed to block IP. Check the console for details.', 'error')
+        }
+      },
+    })
   }
+
+  const handleWhitelistIP = (ip) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Whitelist IP Address',
+      message: `Add ${ip} to the whitelist? Traffic from this IP will not be flagged as suspicious.`,
+      type: 'success',
+      confirmText: 'Whitelist',
+      isLoading: false,
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false })) // Close immediately
+        setOpenActionId(null)
+        try {
+          await firewallAPI.whitelist(ip)
+          showToast(`IP ${ip} has been whitelisted`, 'success')
+        } catch (err) {
+          showToast('Failed to whitelist IP', 'error')
+        }
+      },
+    })
+  }
+
+  const handleInspectPacket = (packet) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Packet Details',
+      message: `Source: ${packet.src_ip}:${packet.src_port || '-'}\nDestination: ${packet.dst_ip}:${packet.dst_port || '-'}\nProtocol: ${packet.protocol}\nSize: ${packet.packet_size} bytes\nThreat: ${packet.is_intrusion ? packet.scan_type : 'None'}`,
+      type: 'info',
+      confirmText: 'Close',
+      showCancel: false,
+      onConfirm: () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }))
+        setOpenActionId(null)
+      },
+    })
+  }
+
+  const handleLogPacket = (packet) => {
+    // Export single packet to clipboard as JSON
+    navigator.clipboard.writeText(JSON.stringify(packet, null, 2))
+    showToast('Packet data copied to clipboard', 'info')
+    setOpenActionId(null)
+  }
+
+  // Close action menu when clicking outside
+  React.useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (!event.target.closest('.action-menu-container')) {
+        setOpenActionId(null)
+      }
+    }
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [])
 
   // ------------------------------------------------------------------
   // Derived analytics from the current packet buffer
@@ -544,16 +740,45 @@ function TrafficMonitoring() {
                         )}
                       </td>
                       <td className="px-6 py-3 whitespace-nowrap text-right">
-                        <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="relative action-menu-container">
                           <button
-                            onClick={() => handleBlockIP(p.src_ip)}
-                            className="p-1 px-2 text-[9px] font-bold bg-white border border-gray-200 rounded text-gray-600 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all uppercase"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setOpenActionId(openActionId === (p.id || i) ? null : (p.id || i))
+                            }}
+                            className="p-1.5 px-3 text-[10px] font-bold bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-all flex items-center gap-1"
                           >
-                            Block
+                            Actions <ChevronDown className={`w-3 h-3 transition-transform ${openActionId === (p.id || i) ? 'rotate-180' : ''}`} />
                           </button>
-                          <button className="p-1 px-2 text-[9px] font-bold bg-white border border-gray-200 rounded text-gray-600 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all uppercase">
-                            Inspect
-                          </button>
+                          
+                          {openActionId === (p.id || i) && (
+                            <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-50">
+                              <button
+                                onClick={() => handleInspectPacket(p)}
+                                className="w-full px-3 py-2 text-left text-xs font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-2"
+                              >
+                                <Eye className="w-3.5 h-3.5" /> View Details
+                              </button>
+                              <button
+                                onClick={() => handleBlockIP(p.src_ip)}
+                                className="w-full px-3 py-2 text-left text-xs font-medium text-gray-700 hover:bg-red-50 hover:text-red-600 flex items-center gap-2"
+                              >
+                                <Ban className="w-3.5 h-3.5" /> Block Source IP
+                              </button>
+                              <button
+                                onClick={() => handleWhitelistIP(p.src_ip)}
+                                className="w-full px-3 py-2 text-left text-xs font-medium text-gray-700 hover:bg-green-50 hover:text-green-600 flex items-center gap-2"
+                              >
+                                <CheckCircle className="w-3.5 h-3.5" /> Whitelist IP
+                              </button>
+                              <button
+                                onClick={() => handleLogPacket(p)}
+                                className="w-full px-3 py-2 text-left text-xs font-medium text-gray-700 hover:bg-purple-50 hover:text-purple-600 flex items-center gap-2"
+                              >
+                                <FileText className="w-3.5 h-3.5" /> Copy to Clipboard
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -650,6 +875,231 @@ function TrafficMonitoring() {
           </div>
         </div>
       </div>
+
+      {/* Capture Report Modal */}
+      {showReportModal && captureReport && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-600 rounded-xl">
+                  <FileText className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="font-bold text-slate-900">Capture Report Generated</h2>
+                  <p className="text-xs text-slate-500">Session completed successfully</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowReportModal(false)}
+                className="p-2 hover:bg-slate-200 rounded-lg transition"
+              >
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 overflow-y-auto max-h-[60vh]">
+              {/* Stats Overview */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="p-4 bg-blue-50 rounded-2xl">
+                  <div className="text-2xl font-black text-blue-600">{captureReport.packet_count?.toLocaleString()}</div>
+                  <div className="text-[10px] uppercase tracking-widest text-blue-400 font-bold">Packets Captured</div>
+                </div>
+                <div className="p-4 bg-amber-50 rounded-2xl">
+                  <div className="text-2xl font-black text-amber-600">{captureReport.alert_count}</div>
+                  <div className="text-[10px] uppercase tracking-widest text-amber-400 font-bold">Alerts Generated</div>
+                </div>
+                <div className="p-4 bg-emerald-50 rounded-2xl">
+                  <div className="text-2xl font-black text-emerald-600">{captureReport.window_minutes || 10}</div>
+                  <div className="text-[10px] uppercase tracking-widest text-emerald-400 font-bold">Minutes Duration</div>
+                </div>
+                <div className="p-4 bg-purple-50 rounded-2xl">
+                  <div className="text-2xl font-black text-purple-600">
+                    {captureReport.protocol_distribution ? Object.keys(captureReport.protocol_distribution).length : 0}
+                  </div>
+                  <div className="text-[10px] uppercase tracking-widest text-purple-400 font-bold">Protocols Seen</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Protocol Distribution */}
+                {captureReport.protocol_distribution && Object.keys(captureReport.protocol_distribution).length > 0 && (
+                  <div className="bg-slate-50 rounded-2xl p-5">
+                    <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+                      <Globe className="w-4 h-4 text-blue-500" />
+                      Protocol Distribution
+                    </h3>
+                    <div className="h-32 mb-3">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={Object.entries(captureReport.protocol_distribution).map(([name, value]) => ({
+                              name,
+                              value
+                            }))}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={25}
+                            outerRadius={50}
+                            paddingAngle={2}
+                            dataKey="value"
+                          >
+                            {Object.entries(captureReport.protocol_distribution).map(([name], idx) => (
+                              <Cell key={idx} fill={PROTOCOL_COLORS[name] || PROTOCOL_COLORS.OTHER} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {Object.entries(captureReport.protocol_distribution).map(([name, count]) => (
+                        <span
+                          key={name}
+                          className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                          style={{ background: `${PROTOCOL_COLORS[name] || PROTOCOL_COLORS.OTHER}20`, color: PROTOCOL_COLORS[name] || PROTOCOL_COLORS.OTHER }}
+                        >
+                          {name}: {count}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Severity Breakdown */}
+                <div className="bg-slate-50 rounded-2xl p-5">
+                  <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-500" />
+                    Alert Severity
+                  </h3>
+                  {captureReport.severity_breakdown && Object.keys(captureReport.severity_breakdown).length > 0 ? (
+                    <div className="space-y-3">
+                      {Object.entries(captureReport.severity_breakdown).map(([severity, count]) => (
+                        <div key={severity} className="flex items-center justify-between">
+                          <span
+                            className="px-2 py-1 rounded text-xs font-bold uppercase"
+                            style={{ background: `${SEVERITY_COLORS[severity] || '#6b7280'}20`, color: SEVERITY_COLORS[severity] || '#6b7280' }}
+                          >
+                            {severity}
+                          </span>
+                          <span className="font-bold text-slate-900">{count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-slate-400 text-sm py-4 text-center">No alerts in this session</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Packet Stats */}
+              {captureReport.stats && (
+                <div className="mt-6 bg-slate-50 rounded-2xl p-5">
+                  <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
+                    <Database className="w-4 h-4 text-purple-500" />
+                    Packet Statistics
+                  </h3>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Min Size</div>
+                      <div className="text-lg font-bold text-slate-900">{captureReport.stats.min_packet_size || 0} B</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Max Size</div>
+                      <div className="text-lg font-bold text-slate-900">{captureReport.stats.max_packet_size || 0} B</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Avg Size</div>
+                      <div className="text-lg font-bold text-slate-900">{Math.round(captureReport.stats.avg_packet_size || 0)} B</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Top Sources */}
+              {captureReport.top_sources && captureReport.top_sources.length > 0 && (
+                <div className="mt-6 bg-slate-50 rounded-2xl p-5">
+                  <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
+                    <Server className="w-4 h-4 text-emerald-500" />
+                    Top Sources
+                  </h3>
+                  <div className="space-y-2">
+                    {captureReport.top_sources.slice(0, 5).map((source, idx) => (
+                      <div key={idx} className="flex items-center justify-between py-1.5 border-b border-slate-200 last:border-0">
+                        <span className="font-mono text-sm text-slate-600">{source.src_ip}</span>
+                        <span className="font-bold text-slate-900">{source.packet_count} packets</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer - Actions */}
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50">
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-slate-500">
+                  Report stored at: <span className="font-mono">reports/captures/</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setShowReportModal(false)}
+                    className="px-4 py-2 text-slate-600 hover:text-slate-900 text-sm font-medium"
+                  >
+                    Close
+                  </button>
+                  <button
+                    onClick={() => downloadCaptureReport(captureReport.id, 'json')}
+                    className="px-4 py-2 bg-blue-100 text-blue-600 rounded-lg text-sm font-bold hover:bg-blue-200 transition flex items-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    JSON
+                  </button>
+                  {captureReport.downloads?.packets_csv && (
+                    <button
+                      onClick={() => downloadCaptureReport(captureReport.id, 'packets')}
+                      className="px-4 py-2 bg-emerald-100 text-emerald-600 rounded-lg text-sm font-bold hover:bg-emerald-200 transition flex items-center gap-2"
+                    >
+                      <Download className="w-4 h-4" />
+                      Packets CSV
+                    </button>
+                  )}
+                  <button
+                    onClick={saveReportLocally}
+                    className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-bold hover:bg-slate-800 transition flex items-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    Save All
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        type={confirmDialog.type}
+        confirmText={confirmDialog.confirmText}
+        showCancel={confirmDialog.showCancel}
+        isLoading={confirmDialog.isLoading}
+        onConfirm={confirmDialog.onConfirm}
+        onClose={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+      />
+
+      {/* Toast Notifications */}
+      <Toast
+        isVisible={toast.isVisible}
+        message={toast.message}
+        type={toast.type}
+        onClose={() => setToast(prev => ({ ...prev, isVisible: false }))}
+      />
     </div>
   )
 }

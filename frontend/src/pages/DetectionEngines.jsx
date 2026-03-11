@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { modelAPI, metricsAPI } from '../services/api'
+import useWebSocket from '../hooks/useWebSocket'
 import {
   BarChart,
   Bar,
@@ -30,22 +31,76 @@ import {
   RotateCcw,
   Sliders
 } from 'lucide-react'
+import ConfirmDialog, { Toast } from '../components/ConfirmDialog'
 
 function DetectionEngines() {
   const [modelStatus, setModelStatus] = useState({
     ml: 'Active',
-    capture: 'Active',
+    capture: 'Idle',
     stream: 'Connected'
   })
   const [performanceMetrics, setPerformanceMetrics] = useState({
-    totalPredictions: 45280,
-    intrusionsDetected: 124,
-    detectionRate: 98.4,
-    falsePositives: 12
+    totalPredictions: 0,
+    intrusionsDetected: 0,
+    detectionRate: 0,
+    falsePositives: 0
   })
   const [sensitivity, setSensitivity] = useState('Balanced')
-  const [activityData, setActivityData] = useState([])
+  // Initialize with sample data for visual appeal
+  const [activityData, setActivityData] = useState(() => {
+    const now = new Date()
+    return Array.from({ length: 12 }, (_, i) => {
+      const time = new Date(now.getTime() - (11 - i) * 60000)
+      return {
+        time: time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        predictions: Math.floor(Math.random() * 50) + 10,
+        threats: Math.floor(Math.random() * 5)
+      }
+    })
+  })
   const [isRestarting, setIsRestarting] = useState(false)
+  const [toast, setToast] = useState({
+    isVisible: false,
+    message: '',
+    type: 'info',
+  })
+
+  const showToast = (message, type = 'info') => {
+    setToast({ isVisible: true, message, type })
+    setTimeout(() => setToast(prev => ({ ...prev, isVisible: false })), 3000)
+  }
+
+  // Real-time metrics updates via WebSocket
+  const handleMetricsMessage = useCallback((message) => {
+    if (message.type === 'metrics' && message.data) {
+      const m = message.data
+      setPerformanceMetrics(prev => ({
+        totalPredictions: m.packets_processed || prev.totalPredictions,
+        intrusionsDetected: m.alerts_generated || prev.intrusionsDetected,
+        detectionRate: m.packets_processed > 0 
+          ? ((m.packets_processed - (m.alerts_generated || 0)) / m.packets_processed * 100).toFixed(1)
+          : prev.detectionRate,
+        falsePositives: prev.falsePositives
+      }))
+      setModelStatus(prev => ({
+        ...prev,
+        capture: m.packets_per_second > 0 ? 'Active' : 'Idle'
+      }))
+      
+      // Update activity chart
+      const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      setActivityData(prev => {
+        const newPoint = {
+          time,
+          predictions: m.packets_processed || 0,
+          threats: m.alerts_generated || 0
+        }
+        return [...prev, newPoint].slice(-20)
+      })
+    }
+  }, [])
+
+  useWebSocket('/ws/metrics', handleMetricsMessage)
 
   useEffect(() => {
     loadData()
@@ -53,25 +108,30 @@ function DetectionEngines() {
     return () => clearInterval(interval)
   }, [])
 
-  const loadData = () => {
-    // Generate dummy activity data
-    const data = []
-    const now = new Date()
-    for (let i = 20; i >= 0; i--) {
-      data.push({
-        time: new Date(now.getTime() - i * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        predictions: 80 + Math.floor(Math.random() * 40),
-        threats: Math.floor(Math.random() * 5)
-      })
+  const loadData = async () => {
+    try {
+      const response = await metricsAPI.get(1) // Get last 1 hour of metrics
+      if (response.data) {
+        const m = response.data
+        setPerformanceMetrics(prev => ({
+          totalPredictions: m.total_packets || prev.totalPredictions,
+          intrusionsDetected: m.total_alerts || prev.intrusionsDetected,
+          detectionRate: m.total_packets > 0 
+            ? ((m.total_packets - (m.total_alerts || 0)) / m.total_packets * 100).toFixed(1)
+            : prev.detectionRate,
+          falsePositives: prev.falsePositives
+        }))
+      }
+    } catch (error) {
+      console.error('Error loading metrics:', error)
     }
-    setActivityData(data)
   }
 
   const handleRestart = () => {
     setIsRestarting(true)
     setTimeout(() => {
       setIsRestarting(false)
-      alert('Detection engine components restarted successfully.')
+      showToast('Detection engine components restarted successfully', 'success')
     }, 2000)
   }
 
@@ -210,36 +270,98 @@ function DetectionEngines() {
 
           {/* Activity Graphs */}
           <div className="lg:col-span-2 space-y-8">
-            <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden h-full flex flex-col">
-              <div className="px-8 py-6 border-b border-slate-50 flex items-center justify-between">
+            <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 border border-slate-700 rounded-3xl shadow-2xl overflow-hidden h-full flex flex-col">
+              <div className="px-8 py-6 border-b border-slate-700/50 flex items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900">Engine Inference Activity</h3>
-                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-0.5">Predictions per Minute vs Spikes</p>
+                  <h3 className="text-lg font-bold text-white">Engine Inference Activity</h3>
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-0.5">Predictions per Minute vs Threat Spikes</p>
                 </div>
-                <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-blue-500"></span> Inferences
+                <div className="flex items-center gap-6 text-[10px] font-black uppercase tracking-widest text-slate-300">
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-gradient-to-r from-cyan-400 to-blue-500 shadow-lg shadow-cyan-500/50"></span> Inferences
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-red-500"></span> Spikes
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-gradient-to-r from-rose-400 to-red-500 shadow-lg shadow-rose-500/50 animate-pulse"></span> Threat Spikes
                   </div>
                 </div>
               </div>
-              <div className="p-8 flex-1">
+              <div className="p-8 flex-1 relative">
+                {/* Background glow effects */}
+                <div className="absolute inset-0 opacity-30 pointer-events-none">
+                  <div className="absolute top-1/4 left-1/4 w-48 h-48 bg-cyan-500 rounded-full filter blur-[80px]"></div>
+                  <div className="absolute bottom-1/4 right-1/4 w-32 h-32 bg-rose-500 rounded-full filter blur-[60px]"></div>
+                </div>
                 <ResponsiveContainer width="100%" height="100%" minHeight={400}>
                   <AreaChart data={activityData}>
                     <defs>
                       <linearGradient id="colorPredictions" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1} />
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                        <stop offset="0%" stopColor="#06b6d4" stopOpacity={0.6} />
+                        <stop offset="50%" stopColor="#3b82f6" stopOpacity={0.3} />
+                        <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
                       </linearGradient>
+                      <linearGradient id="colorThreats" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.5} />
+                        <stop offset="100%" stopColor="#ef4444" stopOpacity={0} />
+                      </linearGradient>
+                      <filter id="glow">
+                        <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                        <feMerge>
+                          <feMergeNode in="coloredBlur"/>
+                          <feMergeNode in="SourceGraphic"/>
+                        </feMerge>
+                      </filter>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} />
-                    <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
-                    <Area type="monotone" dataKey="predictions" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorPredictions)" />
-                    <Line type="monotone" dataKey="threats" stroke="#ef4444" strokeWidth={3} dot={{ r: 4, fill: '#ef4444' }} />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148, 163, 184, 0.1)" />
+                    <XAxis 
+                      dataKey="time" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 600 }} 
+                      dy={10}
+                    />
+                    <YAxis 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 600 }}
+                      dx={-10}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        borderRadius: '16px', 
+                        border: 'none', 
+                        background: 'rgba(15, 23, 42, 0.95)',
+                        backdropFilter: 'blur(10px)',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+                        padding: '12px 16px'
+                      }}
+                      labelStyle={{ color: '#e2e8f0', fontWeight: 700, marginBottom: 8 }}
+                      itemStyle={{ color: '#94a3b8', fontSize: 12 }}
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="predictions" 
+                      stroke="#06b6d4" 
+                      strokeWidth={3} 
+                      fillOpacity={1} 
+                      fill="url(#colorPredictions)"
+                      filter="url(#glow)"
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="threats" 
+                      stroke="#f43f5e" 
+                      strokeWidth={3} 
+                      fillOpacity={1}
+                      fill="url(#colorThreats)"
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="threats" 
+                      stroke="#f43f5e" 
+                      strokeWidth={2} 
+                      dot={{ r: 5, fill: '#f43f5e', stroke: '#fff', strokeWidth: 2 }}
+                      activeDot={{ r: 8, fill: '#f43f5e', stroke: '#fff', strokeWidth: 3 }}
+                    />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -289,6 +411,14 @@ function DetectionEngines() {
           </div>
         </div>
       </div>
+
+      {/* Toast Notifications */}
+      <Toast
+        isVisible={toast.isVisible}
+        message={toast.message}
+        type={toast.type}
+        onClose={() => setToast(prev => ({ ...prev, isVisible: false }))}
+      />
     </div>
   )
 }

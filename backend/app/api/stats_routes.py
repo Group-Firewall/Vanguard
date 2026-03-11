@@ -1,12 +1,17 @@
 """Statistics and analytics routes"""
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import Dict, List
+from typing import Dict, List, Optional
 from datetime import datetime, timedelta
+from pathlib import Path
+import json
+import os
 
 from app.database import get_db
 from app.models import Alert, Metric, ModelPerformance
+from app.config import settings
 
 router = APIRouter()
 
@@ -153,3 +158,255 @@ async def get_stats_timeline(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching timeline: {str(e)}")
 
+
+# =============================================================================
+# Capture Reports API
+# =============================================================================
+
+def _get_reports_dir() -> Path:
+    """Get the capture reports directory path."""
+    return Path(settings.DATA_PATH) / "capture_reports"
+
+
+@router.get("/reports/captures")
+async def list_capture_reports(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    limit: int = 50
+):
+    """List all available capture reports with optional date filtering.
+    
+    Query params:
+    - start_date: Filter reports from this date (YYYY-MM-DD)
+    - end_date: Filter reports until this date (YYYY-MM-DD)
+    - limit: Maximum number of reports to return (default 50)
+    """
+    try:
+        reports_dir = _get_reports_dir()
+        
+        if not reports_dir.exists():
+            return {"reports": [], "total": 0}
+        
+        # Find all JSON report files
+        report_files = list(reports_dir.glob("capture_report_*.json"))
+        reports = []
+        
+        for report_path in report_files:
+            # Extract timestamp from filename: capture_report_YYYYMMDD_HHMMSS.json
+            filename = report_path.stem
+            try:
+                timestamp_str = filename.replace("capture_report_", "")
+                report_date = datetime.strptime(timestamp_str, "%Y%m%d_%H%M%S")
+            except ValueError:
+                continue
+            
+            # Apply date filters
+            if start_date:
+                try:
+                    start = datetime.strptime(start_date, "%Y-%m-%d")
+                    if report_date < start:
+                        continue
+                except ValueError:
+                    pass
+            
+            if end_date:
+                try:
+                    end = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+                    if report_date >= end:
+                        continue
+                except ValueError:
+                    pass
+            
+            # Load report summary
+            try:
+                with report_path.open("r", encoding="utf-8") as f:
+                    report_data = json.load(f)
+                
+                # Check for associated CSV files
+                packets_csv = reports_dir / f"{filename}_packets.csv"
+                alerts_csv = reports_dir / f"{filename}_alerts.csv"
+                
+                reports.append({
+                    "id": timestamp_str,
+                    "timestamp": report_date.isoformat(),
+                    "filename": report_path.name,
+                    "packet_count": report_data.get("packet_count", 0),
+                    "alert_count": report_data.get("alert_count", 0),
+                    "window_minutes": report_data.get("window_minutes", 10),
+                    "protocol_distribution": report_data.get("protocol_distribution", {}),
+                    "severity_breakdown": report_data.get("severity_breakdown", {}),
+                    "stats": report_data.get("stats", {}),
+                    "has_packets_csv": packets_csv.exists(),
+                    "has_alerts_csv": alerts_csv.exists(),
+                    "file_size": report_path.stat().st_size
+                })
+            except (json.JSONDecodeError, IOError):
+                continue
+        
+        # Sort by timestamp descending (newest first)
+        reports.sort(key=lambda r: r["timestamp"], reverse=True)
+        
+        # Apply limit
+        total = len(reports)
+        reports = reports[:limit]
+        
+        return {
+            "reports": reports,
+            "total": total,
+            "returned": len(reports)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing reports: {str(e)}")
+
+
+@router.get("/reports/captures/{report_id}")
+async def get_capture_report(report_id: str):
+    """Get detailed capture report by ID (timestamp).
+    
+    The report_id is the timestamp in format YYYYMMDD_HHMMSS
+    """
+    try:
+        reports_dir = _get_reports_dir()
+        report_path = reports_dir / f"capture_report_{report_id}.json"
+        
+        if not report_path.exists():
+            raise HTTPException(status_code=404, detail="Report not found")
+        
+        with report_path.open("r", encoding="utf-8") as f:
+            report_data = json.load(f)
+        
+        # Add download URLs
+        packets_csv = reports_dir / f"capture_report_{report_id}_packets.csv"
+        alerts_csv = reports_dir / f"capture_report_{report_id}_alerts.csv"
+        
+        report_data["id"] = report_id
+        report_data["downloads"] = {
+            "json": f"/api/reports/captures/{report_id}/download/json",
+            "packets_csv": f"/api/reports/captures/{report_id}/download/packets" if packets_csv.exists() else None,
+            "alerts_csv": f"/api/reports/captures/{report_id}/download/alerts" if alerts_csv.exists() else None
+        }
+        
+        return report_data
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching report: {str(e)}")
+
+
+@router.get("/reports/captures/{report_id}/download/{file_type}")
+async def download_capture_report(report_id: str, file_type: str):
+    """Download a capture report file.
+    
+    file_type can be: json, packets, alerts
+    """
+    try:
+        reports_dir = _get_reports_dir()
+        
+        if file_type == "json":
+            file_path = reports_dir / f"capture_report_{report_id}.json"
+            media_type = "application/json"
+            filename = f"capture_report_{report_id}.json"
+        elif file_type == "packets":
+            file_path = reports_dir / f"capture_report_{report_id}_packets.csv"
+            media_type = "text/csv"
+            filename = f"capture_report_{report_id}_packets.csv"
+        elif file_type == "alerts":
+            file_path = reports_dir / f"capture_report_{report_id}_alerts.csv"
+            media_type = "text/csv"
+            filename = f"capture_report_{report_id}_alerts.csv"
+        else:
+            raise HTTPException(status_code=400, detail="Invalid file type. Use: json, packets, alerts")
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        return FileResponse(
+            path=str(file_path),
+            media_type=media_type,
+            filename=filename
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error downloading report: {str(e)}")
+
+
+@router.delete("/reports/captures/{report_id}")
+async def delete_capture_report(report_id: str):
+    """Delete a capture report and its associated files."""
+    try:
+        reports_dir = _get_reports_dir()
+        
+        files_deleted = []
+        files_to_delete = [
+            reports_dir / f"capture_report_{report_id}.json",
+            reports_dir / f"capture_report_{report_id}_packets.csv",
+            reports_dir / f"capture_report_{report_id}_alerts.csv"
+        ]
+        
+        for file_path in files_to_delete:
+            if file_path.exists():
+                file_path.unlink()
+                files_deleted.append(file_path.name)
+        
+        if not files_deleted:
+            raise HTTPException(status_code=404, detail="Report not found")
+        
+        return {
+            "success": True,
+            "deleted_files": files_deleted,
+            "message": f"Deleted {len(files_deleted)} file(s)"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting report: {str(e)}")
+
+
+@router.post("/reports/cleanup")
+async def cleanup_old_reports(days_to_keep: int = 30):
+    """Delete reports older than specified days (retention policy).
+    
+    Default retention: 30 days
+    """
+    try:
+        reports_dir = _get_reports_dir()
+        
+        if not reports_dir.exists():
+            return {"deleted_count": 0, "message": "No reports directory"}
+        
+        cutoff_date = datetime.now() - timedelta(days=days_to_keep)
+        deleted_count = 0
+        
+        report_files = list(reports_dir.glob("capture_report_*.json"))
+        
+        for report_path in report_files:
+            filename = report_path.stem
+            try:
+                timestamp_str = filename.replace("capture_report_", "")
+                report_date = datetime.strptime(timestamp_str, "%Y%m%d_%H%M%S")
+                
+                if report_date < cutoff_date:
+                    # Delete the report and associated files
+                    report_path.unlink()
+                    
+                    packets_csv = reports_dir / f"{filename}_packets.csv"
+                    alerts_csv = reports_dir / f"{filename}_alerts.csv"
+                    
+                    if packets_csv.exists():
+                        packets_csv.unlink()
+                    if alerts_csv.exists():
+                        alerts_csv.unlink()
+                    
+                    deleted_count += 1
+            except (ValueError, IOError):
+                continue
+        
+        return {
+            "deleted_count": deleted_count,
+            "retention_days": days_to_keep,
+            "cutoff_date": cutoff_date.isoformat(),
+            "message": f"Deleted {deleted_count} report(s) older than {days_to_keep} days"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error cleaning up reports: {str(e)}")
