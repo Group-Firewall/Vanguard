@@ -37,3 +37,4 @@ backend/data/datasets/capture_reports/
 backend/data/raw/
 backend/data/processed/
 vanguard.db
+backend/vanguard.db
