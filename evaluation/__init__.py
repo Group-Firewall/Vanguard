@@ -1,2 +1,0 @@
-"""Evaluation system for NIDS"""
-

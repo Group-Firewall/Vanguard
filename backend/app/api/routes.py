@@ -9,7 +9,6 @@ import asyncio
 from app.database import get_db
 from app import schemas
 from app.services.packet_capture import PacketCaptureService
-from app.services.detection_engine import get_detection_engine
 from app.services.alert_manager import AlertManager
 from app.services.model_service import ModelService
 from app.services.report_service import generate_capture_report
@@ -30,9 +29,16 @@ router = APIRouter()
 
 # Initialize services
 capture_service = PacketCaptureService()
-detection_engine = get_detection_engine()
 alert_manager = AlertManager()
-model_service = ModelService()
+_model_service: Optional[ModelService] = None
+
+
+def get_model_service() -> ModelService:
+    """Lazily initialize ModelService only when an endpoint needs it."""
+    global _model_service
+    if _model_service is None:
+        _model_service = ModelService()
+    return _model_service
 
 
 @router.post("/capture/start", response_model=schemas.CaptureStatusResponse)
@@ -288,7 +294,7 @@ async def get_feature_importance(
 ):
     """Get feature importance for models"""
     try:
-        importance_data = model_service.get_feature_importance(model_name)
+        importance_data = get_model_service().get_feature_importance(model_name)
         
         # If no data, return default feature importance based on common network features
         if not importance_data.get('features') or len(importance_data.get('features', {})) == 0:
@@ -336,6 +342,7 @@ async def retrain_model(
 ):
     """Retrain ML models"""
     try:
+        model_service = get_model_service()
         background_tasks.add_task(
             model_service.retrain_models,
             model_type=request.model_type,
@@ -354,7 +361,7 @@ async def health_check():
         "status": "healthy",
         "timestamp": datetime.now(),
         "capture_active": capture_service.is_capturing,
-        "pipeline_active": pipeline.is_running,
+        "pipeline_active": pipeline.is_running if pipeline else False,
     }
 
 

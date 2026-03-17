@@ -259,10 +259,10 @@ class PacketProcessingPipeline:
 
 
 # ---------------------------------------------------------------------------
-# Global singleton — imported by routes.py and background_tasks.py
+# Global singleton — created lazily to avoid import-time heavy model loading
 # ---------------------------------------------------------------------------
 
-_pipeline: PacketProcessingPipeline = PacketProcessingPipeline()
+_pipeline: PacketProcessingPipeline | None = None
 _pipeline_task: asyncio.Task | None = None
 
 
@@ -270,26 +270,29 @@ async def start_pipeline() -> None:
     """Start the processing pipeline as an asyncio background task."""
     global _pipeline, _pipeline_task
 
+    if _pipeline is None:
+        _pipeline = PacketProcessingPipeline()
+
     if _pipeline.is_running:
         logger.info("Pipeline is already running")
         return
 
-    _pipeline = PacketProcessingPipeline()
     _pipeline_task = asyncio.create_task(_pipeline.run(), name="packet-pipeline")
     logger.info("Pipeline task created")
 
 
 def stop_pipeline() -> None:
     """Request the pipeline to stop and cancel its asyncio task."""
-    global _pipeline_task
+    global _pipeline, _pipeline_task
 
-    _pipeline.stop()
+    if _pipeline is not None:
+        _pipeline.stop()
 
     if _pipeline_task and not _pipeline_task.done():
         _pipeline_task.cancel()
         logger.info("Pipeline task cancelled")
 
 
-def get_pipeline() -> PacketProcessingPipeline:
-    """Return the current pipeline instance (for status queries)."""
+def get_pipeline() -> PacketProcessingPipeline | None:
+    """Return the current pipeline instance, if started."""
     return _pipeline

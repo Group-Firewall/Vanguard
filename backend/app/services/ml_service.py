@@ -7,12 +7,23 @@ This service follows clean architecture principles:
 """
 
 import os
+import sys
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 import numpy as np
 import pandas as pd
 import joblib
+
+# Compatibility shim: some existing pickled artifacts reference numpy._core.
+# In environments where that module path is missing, alias it to numpy.core.
+try:
+    import numpy.core as _numpy_core  # type: ignore
+
+    if "numpy._core" not in sys.modules:
+        sys.modules["numpy._core"] = _numpy_core
+except Exception:
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -58,11 +69,17 @@ class MLService:
         self.supervised_weight = 0.5
         self.unsupervised_weight = 0.2
         
-        # Try to load models on initialization
-        try:
-            self.load_models()
-        except Exception as e:
-            logger.warning(f"Models not loaded during init: {e}")
+        # Optional eager model loading.
+        # Disabled by default because binary model artefacts created on a
+        # different platform/python stack can hard-crash the process.
+        auto_load_models = os.getenv("AUTO_LOAD_MODELS", "false").lower() == "true"
+        if auto_load_models:
+            try:
+                self.load_models()
+            except Exception as e:
+                logger.warning(f"Models not loaded during init: {e}")
+        else:
+            logger.info("AUTO_LOAD_MODELS disabled; ML models will remain unloaded until explicitly requested")
             
         MLService._initialized = True
     
