@@ -1,16 +1,4 @@
-/**
- * TrafficMonitoring — live packet stream viewer.
- *
- * Data flow
- * ---------
- * Backend  →  /ws/packets  →  useWebSocket hook  →  local packet buffer
- *
- * The frontend is a pure VISUALISATION layer:
- *  - Subscribes to /ws/packets for the live raw packet feed.
- *  - Subscribes to /ws/metrics for throughput stats.
- *  - Starts/stops capture via REST (captureAPI).
- *  - Performs no packet capture or ML analysis itself.
- */
+
 
 import React, { useState, useMemo, useRef, useCallback } from 'react'
 import api, { metricsAPI, firewallAPI } from '../services/api'
@@ -27,15 +15,13 @@ import {
   X, AlertTriangle,
 } from 'lucide-react'
 
-// ---------------------------------------------------------------------------
 // Constants
-// ---------------------------------------------------------------------------
 
 const MAX_PACKET_BUFFER = 100
 const MAX_TRAFFIC_RATE_POINTS = 20
 const MAX_WARNINGS = 5
 
-// Protocol colors for charts
+// Protocol colors for the charts
 const PROTOCOL_COLORS = {
   TCP: '#3b82f6',
   UDP: '#10b981',
@@ -55,9 +41,7 @@ const SEVERITY_COLORS = {
   info: '#6b7280'
 }
 
-// ---------------------------------------------------------------------------
 // Protocol badge colours
-// ---------------------------------------------------------------------------
 
 function protocolBadgeClass(protocol) {
   if (protocol === 'TCP') return 'bg-green-50 text-green-600'
@@ -65,13 +49,8 @@ function protocolBadgeClass(protocol) {
   return 'bg-gray-100 text-gray-600'
 }
 
-// ---------------------------------------------------------------------------
 // Sub-components
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // Main component
-// ---------------------------------------------------------------------------
 
 const STORAGE_KEY = 'vanguard_last_capture'
 
@@ -169,9 +148,7 @@ function TrafficMonitoring() {
     return () => clearTimeout(saveTimeout)
   }, [packets, trafficRate, liveMetrics])
 
-  // ------------------------------------------------------------------
   // Capture Status from Global Context (persists across pages)
-  // ------------------------------------------------------------------
 
   const handleStartCapture = async () => {
     try {
@@ -264,9 +241,7 @@ function TrafficMonitoring() {
     }
   }
 
-  // ------------------------------------------------------------------
   // /ws/packets — raw live packet feed
-  // ------------------------------------------------------------------
 
   const handlePacketMessage = useCallback((message) => {
     if (message.type !== 'packet') return
@@ -314,9 +289,7 @@ function TrafficMonitoring() {
 
   useWebSocket('/ws/packets', handlePacketMessage)
 
-  // ------------------------------------------------------------------
   // /ws/metrics — periodic throughput stats from pipeline
-  // ------------------------------------------------------------------
 
   const handleMetricsMessage = useCallback((message) => {
     if (message.type === 'metrics') {
@@ -326,9 +299,7 @@ function TrafficMonitoring() {
 
   useWebSocket('/ws/metrics', handleMetricsMessage)
 
-  // ------------------------------------------------------------------
   // Packet Actions
-  // ------------------------------------------------------------------
 
   const handleBlockIP = (ip) => {
     setConfirmDialog({
@@ -450,9 +421,7 @@ function TrafficMonitoring() {
     ?? trafficRate[trafficRate.length - 1]?.count
     ?? 0
 
-  // ------------------------------------------------------------------
   // Render
-  // ------------------------------------------------------------------
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 p-6 font-['Inter']">
