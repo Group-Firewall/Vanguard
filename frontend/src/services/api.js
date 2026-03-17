@@ -12,9 +12,7 @@ import axios from 'axios'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
 
-// ---------------------------------------------------------------------------
 // Axios REST client
-// ---------------------------------------------------------------------------
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -45,9 +43,7 @@ api.interceptors.response.use(
   },
 )
 
-// ---------------------------------------------------------------------------
 // WebSocket URL helper
-// ---------------------------------------------------------------------------
 
 /**
  * Build an absolute WebSocket URL for the backend.
@@ -66,9 +62,7 @@ export function wsURL(path) {
   return `${protocol}//${host}:8000${path}`
 }
 
-// ---------------------------------------------------------------------------
 // Domain API groups
-// ---------------------------------------------------------------------------
 
 export const authAPI = {
   updateMe: (data) => api.put('/auth/me', data),
