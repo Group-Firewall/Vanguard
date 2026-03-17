@@ -1,5 +1,5 @@
 """Pydantic schemas for API request/response validation"""
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
@@ -73,6 +73,8 @@ class AlertResponse(BaseModel):
 
 class MetricsResponse(BaseModel):
     """Metrics response schema"""
+    model_config = ConfigDict(protected_namespaces=())
+
     timestamp: datetime
     packet_volume: int
     attack_rate: float
@@ -84,6 +86,8 @@ class MetricsResponse(BaseModel):
 
 class FeatureImportanceResponse(BaseModel):
     """Feature importance response schema"""
+    model_config = ConfigDict(protected_namespaces=())
+
     model_name: str
     features: List[Dict[str, Any]]
     shap_values: Optional[Dict[str, List[float]]] = None
@@ -91,6 +95,8 @@ class FeatureImportanceResponse(BaseModel):
 
 class ModelRetrainRequest(BaseModel):
     """Model retraining request schema"""
+    model_config = ConfigDict(protected_namespaces=())
+
     model_type: str  # supervised, unsupervised, hybrid, all
     force: bool = False
 
@@ -141,6 +147,8 @@ class BatchPredictionRequest(BaseModel):
 
 class TrainRequest(BaseModel):
     """Model training request"""
+    model_config = ConfigDict(protected_namespaces=())
+
     model_type: str = "all"  # supervised, unsupervised, hybrid, all
     force: bool = False
 

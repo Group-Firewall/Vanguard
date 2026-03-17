@@ -8,20 +8,29 @@ push minimal representations onto the in-memory stream.
 Design decisions
 ----------------
 * Capture = raw producer only.  No database writes, no ML calls, no locks
-  beyond the simple packet counter.
-* Uses Scapy's sniff() on a dedicated OS thread so the asyncio event loop
-  is never blocked.
+    beyond the simple packet counter.
+* Uses Scapy's AsyncSniffer so capture runs off the asyncio event loop and
+    can be stopped explicitly on Windows.
 * Captured packets are converted to a lightweight PacketData dataclass and
-  pushed onto the shared asyncio.Queue via put_nowait().  If the queue is
-  full, the packet is discarded with a warning rather than blocking.
+    pushed onto the shared asyncio.Queue via put_nowait().  If the queue is
+    full, the packet is discarded with a warning rather than blocking.
 """
 import asyncio
 import logging
+import os
 import threading
+import warnings
 from datetime import datetime
 from typing import Optional
 
-from scapy.all import sniff, get_if_list, IFACES
+warnings.filterwarnings(
+    "ignore",
+    message=r".*TripleDES has been moved.*",
+    category=Warning,
+)
+
+from scapy.all import AsyncSniffer, get_if_list
+from scapy.config import conf
 from scapy.layers.inet import IP, TCP, UDP
 
 from app.core.stream import PacketData, packet_stream
@@ -35,7 +44,7 @@ class PacketCaptureService:
 
     def __init__(self) -> None:
         self.is_capturing: bool = False
-        self._capture_thread: Optional[threading.Thread] = None
+        self._sniffer: Optional[AsyncSniffer] = None
         self._packet_count: int = 0
         self._dropped_count: int = 0
         self._start_time: Optional[datetime] = None
@@ -72,17 +81,18 @@ class PacketCaptureService:
         self._dropped_count = 0
         self._start_time = datetime.now()
         self.is_capturing = True
-        
+
         # Capture the running event loop BEFORE starting thread
         # This is critical for thread-safe queue operations
         self._loop = asyncio.get_running_loop()
 
-        self._capture_thread = threading.Thread(
-            target=self._capture_loop,
-            args=(self._interface, self._filter_str),
-            daemon=True,
+        self._sniffer = AsyncSniffer(
+            iface=self._interface,
+            filter=self._filter_str,
+            prn=self.enqueue_packet,
+            store=False,
         )
-        self._capture_thread.start()
+        self._sniffer.start()
         logger.info(
             "Packet capture started — interface=%s filter='%s'",
             self._interface,
@@ -95,8 +105,17 @@ class PacketCaptureService:
             return
 
         self.is_capturing = False
-        if self._capture_thread:
-            self._capture_thread.join(timeout=5)
+        if self._sniffer is not None:
+            try:
+                self._sniffer.stop()
+            except Exception as exc:
+                logger.warning("Error while stopping sniffer: %s", exc)
+
+        self._sniffer = None
+        self._loop = None
+        self._filter_str = None
+        self._interface = None
+        self._start_time = None
 
         logger.info(
             "Packet capture stopped — captured=%d dropped=%d",
@@ -118,24 +137,6 @@ class PacketCaptureService:
     def get_interface(self) -> Optional[str]:
         return self._interface
 
-    # ------------------------------------------------------------------
-    # Internal capture loop
-    # ------------------------------------------------------------------
-
-    def _capture_loop(self, interface: str, filter_str: str) -> None:
-        """Run Scapy sniff on the chosen interface (blocking, OS thread)."""
-        logger.debug("Capture thread started on %s with filter '%s'", interface, filter_str)
-        try:
-            sniff(
-                iface=interface,
-                filter=filter_str,
-                prn=self.enqueue_packet,
-                stop_filter=lambda _pkt: not self.is_capturing,
-            )
-            logger.debug("Sniff() returned normally")
-        except Exception as exc:
-            logger.error("Capture loop error: %s", exc)
-
     def enqueue_packet(self, raw_packet) -> None:
         """Convert a raw Scapy packet to PacketData and push to the stream.
 
@@ -143,6 +144,9 @@ class PacketCaptureService:
         and must never block — no I/O, no DB, no ML inference.
         """
         try:
+            if not self.is_capturing or self._loop is None:
+                return
+
             if IP not in raw_packet:
                 return  # Skip non-IP frames
 
@@ -200,41 +204,33 @@ class PacketCaptureService:
     # ------------------------------------------------------------------
 
     def _default_interface(self) -> Optional[str]:
-        """Return the default network interface.
-        
-        On Windows, we prefer the friendly name (e.g., 'Wi-Fi', 'Ethernet')
-        over the raw NPF device path for better compatibility.
-        """
+        """Return a robust default interface for host and Docker runtimes."""
         try:
-            # Priority order: Wi-Fi > Ethernet > Others
-            # Most users are connected via Wi-Fi these days
-            priority_keywords = ['wi-fi', 'wifi', 'wireless', 'ethernet', 'eth']
-            
-            # First pass: look for interfaces matching priority keywords
-            for keyword in priority_keywords:
-                for iface in IFACES.values():
-                    name_lower = iface.name.lower() if iface.name else ""
-                    desc_lower = iface.description.lower() if iface.description else ""
-                    
-                    # Skip loopback, virtual adapters, and Bluetooth
-                    if any(skip in desc_lower for skip in ['loopback', 'virtual', 'bluetooth', 'wan miniport']):
-                        continue
-                    
-                    if keyword in name_lower or keyword in desc_lower:
-                        logger.info(f"Auto-detected interface: {iface.name} ({iface.description})")
-                        return iface.name
-            
-            # Fallback: use Scapy's default
-            from scapy.config import conf
+            # Highest priority: explicit environment/config override
+            configured_iface = os.getenv("CAPTURE_INTERFACE") or settings.INTERFACE
+            if configured_iface:
+                return str(configured_iface)
+
+            # Scapy's default interface is usually the safest choice first
             if conf.iface:
                 return str(conf.iface)
-                
-        except Exception as e:
-            logger.warning(f"Error detecting interface: {e}")
-        
-        # Last resort: return first non-loopback interface
-        interfaces = get_if_list()
-        for iface in interfaces:
-            if "loopback" not in iface.lower():
-                return iface
-        return interfaces[0] if interfaces else None
+
+            interfaces = get_if_list()
+            if not interfaces:
+                return None
+
+            # In Docker, "eth0" is typically the active interface
+            if "eth0" in interfaces:
+                return "eth0"
+
+            # Generic fallback: first non-loopback/non-virtual-like interface
+            skip_tokens = ("lo", "loopback", "docker", "br-", "veth")
+            for iface in interfaces:
+                name_lower = iface.lower()
+                if not any(token in name_lower for token in skip_tokens):
+                    return iface
+
+            return interfaces[0]
+        except Exception as exc:
+            logger.warning("Error detecting interface: %s", exc)
+            return None

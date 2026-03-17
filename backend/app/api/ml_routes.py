@@ -15,10 +15,16 @@ from app.services.feature_extraction import FeatureExtractionService
 
 router = APIRouter()
 
-# Initialize services using singleton pattern
-ml_service = get_ml_service()
-detection_engine = get_detection_engine()
+# Initialize only lightweight services eagerly
 feature_extractor = FeatureExtractionService()
+
+
+def _get_ml_service() -> MLService:
+    return get_ml_service()
+
+
+def _get_detection_engine() -> DetectionEngine:
+    return get_detection_engine()
 
 
 @router.post("/predict", response_model=schemas.PredictionResponse)
@@ -51,7 +57,7 @@ async def predict(
         feature_vector = feature_extractor.extract_all_features(packet_features)
         
         # Run detection
-        detection_result = detection_engine.detect_packet(packet_features)
+        detection_result = _get_detection_engine().detect_packet(packet_features)
         
         # Create alert if malicious
         if detection_result.get('is_malicious', False):
@@ -102,7 +108,7 @@ async def predict_batch(
                 'timestamp': datetime.now()
             }
             
-            detection_result = detection_engine.detect_packet(packet_features)
+            detection_result = _get_detection_engine().detect_packet(packet_features)
             
             results.append(schemas.PredictionResponse(
                 is_malicious=detection_result.get('is_malicious', False),
@@ -134,7 +140,7 @@ async def train_models(
     """
     try:
         background_tasks.add_task(
-            ml_service.train_models,
+            _get_ml_service().train_models,
             model_type=request.model_type,
             force=request.force
         )
@@ -210,7 +216,7 @@ async def health_check(db: Session = Depends(get_db)):
             db_status = "unhealthy"
         
         # Check model status
-        model_status = ml_service.get_model_status()
+        model_status = _get_ml_service().get_model_status()
         
         # Get recent statistics
         recent_alerts = db.query(Alert).filter(

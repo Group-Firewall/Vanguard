@@ -1,0 +1,41 @@
+# Python artefacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Runtime / generated
+*.db
+*.db-shm
+*.db-wal
+*.log
+*.pid
+
+# Large model binaries (mount via Docker volume instead)
+models/supervised/*.pkl
+models/supervised/*.joblib
+models/unsupervised/*.pkl
+models/unsupervised/*.joblib
+models/hybrid/*.pkl
+models/hybrid/*.joblib
+
+# Test artefacts
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Docs / markdown extras
+*.md

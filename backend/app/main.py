@@ -19,11 +19,15 @@ app = FastAPI(
 )
 
 # CORS middleware
+# Includes both local dev origins and the Docker nginx proxy origin
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "http://localhost:80",
+        "http://frontend:80",   # Docker service-to-service
+        "http://frontend",
     ],
     allow_credentials=True,
     allow_methods=["*"],

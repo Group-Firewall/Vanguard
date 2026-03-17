@@ -1,0 +1,89 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  Vanguard NIDS – Docker Compose
+#
+#  Start everything:   docker compose up -d
+#  Update images:      docker compose pull && docker compose up -d
+#  Stop everything:    docker compose down
+#  Logs (live):        docker compose logs -f
+#  Run demo attacks:   docker exec -it vanguard-backend python demo_attacks.py all
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── FastAPI backend ─────────────────────────────────────────────────────
+  backend:
+    image: absolomjr10058/vanguard-backend:latest
+    container_name: vanguard-backend
+    restart: unless-stopped
+    init: true
+
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"       # API + WebSocket
+
+    # Scapy needs these Linux capabilities to open raw packet sockets
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+
+    environment:
+      # SQLite stored on a named volume so data survives container restarts
+      DATABASE_URL: "sqlite:////data/vanguard.db"
+      # Leave empty to auto-detect (best cross-OS default).
+      # Override in .env when needed (e.g. CAPTURE_INTERFACE=eth0 or lo)
+      CAPTURE_INTERFACE: "${CAPTURE_INTERFACE:-}"
+      AUTO_LOAD_MODELS: "${AUTO_LOAD_MODELS:-false}"
+      # Override any .env defaults
+      DEBUG: "false"
+
+    volumes:
+      # Persist the database and trained models between restarts
+      - backend_db:/data
+      - backend_models:/backend/models
+
+    networks:
+      - vanguard-net
+
+    # Allow Linux hosts to resolve host.docker.internal like Docker Desktop
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── React frontend (Nginx) ───────────────────────────────────────────────
+  frontend:
+    image: absolomjr10058/vanguard-frontend:latest
+    container_name: vanguard-frontend
+    restart: unless-stopped
+    init: true
+
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"         # Browse to http://localhost:${FRONTEND_PORT:-3000}
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    networks:
+      - vanguard-net
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+# ── Shared network ───────────────────────────────────────────────────────────
+networks:
+  vanguard-net:
+    driver: bridge
+
+# ── Named volumes (survive `docker compose down`) ────────────────────────────
+volumes:
+  backend_db:
+  backend_models:
